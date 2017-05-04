@@ -1,0 +1,50 @@
+
+ buildscript {
+ 
+  repositories {
+    maven {
+      url "https://plugins.gradle.org/m2/"
+    }
+  }
+  
+  dependencies {
+    classpath 'net.ltgt.gradle:gradle-errorprone-plugin:0.0.8'
+    classpath 'com.google.gradle:osdetector-gradle-plugin:1.4.0'
+  }
+  
+}
+
+repositories {
+    jcenter()
+}
+
+apply plugin: 'java'
+apply plugin: 'net.ltgt.errorprone'
+apply plugin: 'com.google.osdetector'
+
+group = 'io.ewok.gds'
+version = '0.0.1-SNAPSHOT'
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+dependencies {
+
+	// compile time dependency only
+	compile 'org.projectlombok:lombok:1.16.16'
+
+    compile 'org.slf4j:slf4j-api:1.7.21'
+	compile 'com.google.guava:guava:21.0'
+	compile 'io.netty:netty-buffer:4.1.10.Final'
+	
+    testCompile 'junit:junit:4.12'
+    
+}
+
+configurations.errorprone {
+  resolutionStrategy.force 'com.google.errorprone:error_prone_core:2.0.15'
+}
+
+tasks.withType(JavaCompile) {
+  options.compilerArgs += [ '-Xlint:unchecked', '-Xep:DeadException:WARN', '-Xep:GuardedByValidator:OFF' ]
+}
