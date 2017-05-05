@@ -19,7 +19,7 @@ public enum PageFork {
 	FreeSpace,
 
 	/**
-	 * tracks which pages have empty space.
+	 * tracks which pages have all visible tuples. skipped by the scavenger.
 	 */
 
 	VisibilityMap,

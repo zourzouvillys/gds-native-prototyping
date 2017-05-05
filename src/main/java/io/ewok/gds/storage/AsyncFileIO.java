@@ -2,6 +2,7 @@ package io.ewok.gds.storage;
 
 import java.io.IOException;
 import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.CompletionHandler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -34,12 +35,18 @@ public class AsyncFileIO {
 	 * @return
 	 */
 
-	public CompletableFuture<AsyncFileIO> open(Path path) {
+	@SneakyThrows
+	public CompletableFuture<AsyncFileIO> open() {
+		this.channel = AsynchronousFileChannel.open(
+				this.path,
+				Sets.newHashSet(StandardOpenOption.READ, StandardOpenOption.WRITE),
+				io,
+				new FileAttribute[0]);
 		return CompletableFuture.completedFuture(this);
 	}
 
 	@SneakyThrows
-	public CompletableFuture<AsyncFileIO> create() {
+	public CompletableFuture<AsyncFileIO> create(int prealloc) {
 
 		this.channel = AsynchronousFileChannel.open(
 				this.path,
@@ -54,6 +61,7 @@ public class AsyncFileIO {
 	public CompletableFuture<?> close() {
 		try {
 			this.channel.close();
+			this.channel = null;
 		} catch (final IOException e) {
 			final CompletableFuture<?> fut = new CompletableFuture<>();
 			fut.completeExceptionally(e);
@@ -83,12 +91,68 @@ public class AsyncFileIO {
 		}
 	}
 
-	public CompletableFuture<ByteBuf> read(ByteBuf buffer, long offset, int length) {
-		return CompletableFuture.completedFuture(buffer);
+	public CompletableFuture<Integer> read(ByteBuf buffer, long offset, int length) {
+
+		// the result holder
+		final CompletableFuture<Integer> future = new CompletableFuture<>();
+
+		// fetch the path, then read.
+		this.channel.read(
+				buffer.nioBuffer(buffer.writerIndex(), length),
+				offset,
+				buffer,
+				new CompletionHandler<Integer, ByteBuf>() {
+
+					@Override
+					public void completed(Integer result, ByteBuf attachment) {
+						future.complete(result);
+					}
+
+					@Override
+					public void failed(Throwable exc, ByteBuf attachment) {
+						future.completeExceptionally(exc);
+					}
+
+				});
+
+		return future;
+
 	}
 
-	public CompletableFuture<ByteBuf> write(ByteBuf buffer, long offset, int length) {
-		return CompletableFuture.completedFuture(buffer);
+	/**
+	 *
+	 * @param buffer
+	 * @param offset
+	 * @param length
+	 * @return
+	 */
+
+	public CompletableFuture<Integer> write(ByteBuf buffer, long offset, int length) {
+
+		// the result holder
+		final CompletableFuture<Integer> future = new CompletableFuture<>();
+
+		// fetch the path, then read.
+		this.channel.write(
+				buffer.nioBuffer(buffer.writerIndex(), length),
+				offset,
+				buffer,
+				new CompletionHandler<Integer, ByteBuf>() {
+
+					@Override
+					public void completed(Integer result, ByteBuf attachment) {
+						future.complete(result);
+					}
+
+					@Override
+					public void failed(Throwable exc, ByteBuf attachment) {
+						future.completeExceptionally(exc);
+					}
+
+				});
+
+		return future;
+
 	}
 
 	/**

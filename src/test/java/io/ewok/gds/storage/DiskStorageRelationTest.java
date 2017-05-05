@@ -25,19 +25,63 @@ public class DiskStorageRelationTest {
 
 		try {
 
-			Assert.assertFalse(rel.exists(PageFork.Main).get());
+			final StorageRelationFork main = rel.fork(PageFork.Main);
 
-			rel.create(PageFork.Main).get();
+			Assert.assertFalse(main.exists().get());
 
-			Assert.assertTrue(rel.exists(PageFork.Main).get());
+			main.create(0).get();
 
-			Assert.assertEquals(0, (int) rel.nblocks(PageFork.Main).get());
+			Assert.assertTrue(main.exists().get());
 
-			rel.read(PageFork.Main, 0, Unpooled.directBuffer()).get();
+			Assert.assertEquals(0, main.pagecount().get().intValue());
+
+			main.write(0, Unpooled.directBuffer(8192), false).get();
+
+			Assert.assertEquals(1, main.pagecount().get().intValue());
+
+			main.read(0, Unpooled.directBuffer(8192)).get();
 
 		} finally {
 
-			rel.unlink(PageFork.Main);
+			rel.unlink().get();
+			rel.close().get();
+
+		}
+
+	}
+
+	@Test
+	public void testWithBufferManager() throws IOException, InterruptedException, ExecutionException {
+
+		final Path base = Paths.get("/tmp/gds/");
+
+		Files.createDirectories(base);
+
+		final DiskStorageRelation rel = new DiskStorageRelation(base, 0x1);
+
+		try {
+
+			final StorageRelationFork main = rel.fork(PageFork.Main);
+
+			Assert.assertFalse(main.exists().get());
+
+			main.create(0).get();
+
+			Assert.assertTrue(main.exists().get());
+
+			Assert.assertEquals(0, main.pagecount().get().intValue());
+
+			main.write(0, Unpooled.directBuffer(8192), false).get();
+
+			Assert.assertEquals(1, main.pagecount().get().intValue());
+
+			main.read(0, Unpooled.directBuffer(8192)).get();
+
+		} finally {
+
+			rel.unlink().get();
+
+			rel.close().get();
 
 		}
 
