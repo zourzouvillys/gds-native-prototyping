@@ -10,6 +10,7 @@
   dependencies {
     classpath 'net.ltgt.gradle:gradle-errorprone-plugin:0.0.8'
     classpath 'com.google.gradle:osdetector-gradle-plugin:1.4.0'
+    classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.1' 
   }
   
 }
@@ -22,6 +23,7 @@ apply plugin: 'java'
 apply plugin: 'application'
 apply plugin: 'net.ltgt.errorprone'
 apply plugin: 'com.google.osdetector'
+apply plugin: 'com.google.protobuf'
 
 group = 'io.ewok.gds'
 version = '0.0.1-SNAPSHOT'
@@ -39,6 +41,9 @@ dependencies {
 	compile 'com.google.guava:guava:21.0'
 	compile 'io.netty:netty-buffer:4.1.10.Final'
 	
+	compile 'com.google.protobuf:protobuf-java:3.3.0'
+	compile 'com.google.protobuf:protobuf-java-util:3.3.0'
+	
     testCompile 'junit:junit:4.12'
     
 }
@@ -49,4 +54,20 @@ configurations.errorprone {
 
 tasks.withType(JavaCompile) {
   options.compilerArgs += [ '-Xlint:unchecked', '-Xep:DeadException:WARN', '-Xep:GuardedByValidator:OFF' ]
+}
+
+
+
+protobuf {
+  generatedFilesBaseDir = "$projectDir/src"
+  protoc {
+    artifact = 'com.google.protobuf:protoc:3.3.0'
+  }
+}
+
+sourceSets {
+  main {
+    proto {
+    }
+  }
 }

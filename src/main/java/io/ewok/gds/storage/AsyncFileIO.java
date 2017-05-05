@@ -1,6 +1,7 @@
 package io.ewok.gds.storage;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.channels.CompletionHandler;
 import java.nio.file.Files;
@@ -53,6 +54,8 @@ public class AsyncFileIO {
 				Sets.newHashSet(StandardOpenOption.CREATE_NEW, StandardOpenOption.READ, StandardOpenOption.WRITE),
 				io,
 				new FileAttribute[0]);
+
+		this.channel.write(ByteBuffer.wrap(new byte[] { 0 }), prealloc - 1).get();
 
 		return CompletableFuture.completedFuture(this);
 
@@ -134,7 +137,7 @@ public class AsyncFileIO {
 
 		// fetch the path, then read.
 		this.channel.write(
-				buffer.nioBuffer(buffer.writerIndex(), length),
+				buffer.nioBuffer(buffer.readerIndex(), length),
 				offset,
 				buffer,
 				new CompletionHandler<Integer, ByteBuf>() {
@@ -153,6 +156,22 @@ public class AsyncFileIO {
 
 		return future;
 
+	}
+
+	public static CompletableFuture<AsyncFileIO> open(Path file) {
+		final AsyncFileIO handle = new AsyncFileIO(file);
+		return handle.open();
+	}
+
+	public static CompletableFuture<AsyncFileIO> create(Path file, int alloc) {
+		final AsyncFileIO handle = new AsyncFileIO(file);
+		return handle.create(alloc);
+	}
+
+	@SneakyThrows
+	public CompletableFuture<?> flush() {
+		this.channel.force(false);
+		return CompletableFuture.completedFuture(true);
 	}
 
 	/**

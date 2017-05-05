@@ -1,21 +1,40 @@
-# EWOK GDS Buffers
+x# EWOK GDS Buffers
 
 Low level object, buffer & page management.
 
-The library consists of a low level page access service which performs transfers to from storage (e.g, disk), and a buffer manager which performs page caching, eviction, and a write ahead log service.
+The library consists of a low level page access service which performs transfers to from storage (e.g, disk), and a buffer manager which performs page caching, eviction, transactions, and a write ahead log service.
 
 Higher level primitives such as streams, queues, indexes, and tables are built on top of this API.
 
+# Work Contexts
+
+A primary goal of GDS is to never block, and avoid locking wherever possible.
+
+To this end, any API calls which may require disk or network activity to occur before they can complete use completion futures or callbacks rather than blocking.
+
+To ensure healthy resource management, avoiding overloading, and taking on too much work, almost all APIs take a WorkContext.  WorkContext is the scope that APIs are used, that generally maps either to clients or maintenance.  A WorkContext provides keeps track of resource usage, and provides buffers to components that need them.  If a WorkContext is starting to be too aggressive in its resource consumption or disk IO, it can be throttled back or killed. 
+ 
+A WorkContext is assigned a given number of IOPS, a priority, and memory usage when being created.  This can be used to ensure that too much work can not be taken on.
+
+A WorkContext is also allocated to a specific thread pool.  Async callbacks are always dispatched within the same pool.  This allows different thread pools to be used for different work contexts, thus creating different work priorities.  Pools can be pinned to specific CPUs, and the threads have their IO priority set.
+
+Note that io priorities can affect shared buffer reads.  If a low priority task requests a page, and the high priority one piggybacks onto it, it can feel the wrath by being delayed.  To work around this, a page being requested by a higher priority context will adopt the request if it has not already been submitted to the kernel. 
+
+Likewise, for shared buffers, when a page is needed by both it will be pinned to both.  When borrowed from another pool, it will be tracked and the buffer slot can be reused for something else.  Once the owning pool is going to release it, the other pool can chose if it wants to adopt it or not, potentially pushing out other buffers in the process.
+
+Some maintenance work is performed during normal operation.  For example, if an xmin/xmax is encountered that does not have the transaction status set, a lookup occurs to set it on demand.  Likewise, FSM or visibility updates.  In these cases, the work context is not penalised, and instead the operation performed using the "maintenance work" context.  CPU/work time is credited to adjust for delays in completing the requested work because of these tasks, too.
 
 ## Consistency
 
 When a page larger than the disk block size is written to disk, there is no guarantee of atomicity.  A partial page write can occur if the power fails while performing a page write.  This is known as a "fragmented block".
 
-To combat this, GDS creates a copy of a page before writting to disk, and waits until it has been flushed before writing. Once the dirty page has been flushed, then the journal entry can be removed/reused.  The clean page may be copied using transferTo to improve performance, as the page does not need to be copied into userspace.
+To combat this, GDS creates a copy of a page before writing to disk, and waits until it has been flushed before writing. Once the dirty page has been flushed, then the journal entry can be removed/reused.  The clean page may be copied using transferTo to improve performance, as the page does not need to be copied into userspace.
 
-Another option is to use a filesystem which supports atomic writes.  In these cases, full page writes are guarunteed so there is no need to perform page copies.
+Another option is to use a filesystem which supports atomic writes.  In these cases, full page writes are guaranteed so there is no need to perform page copies.
 
 If a consumer doesn't care about potentially broken page because it can retrieve it from somewhere else (e.g, a backup replica), then page backups are not needed.
+
+
 
 # Page Blocks
 
@@ -219,6 +238,11 @@ A lookup map keeps track of the virtual page for each object.  The map consists 
 
 
 
+
+
+# Maintenance
+
+The WAL is a great source of information about modified pages, so can be used to perform maintenance work in a background thread on demand by reading the WAL journal.
 
 
 

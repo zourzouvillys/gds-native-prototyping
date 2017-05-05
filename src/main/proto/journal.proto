@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+
+package gds.wal;
+
+option java_package = "io.ewok.gds.journal.messages";
+option java_outer_classname = "JournalProto";
+option java_multiple_files = true;
+
+/**
+ * the journal consists of a stream of entries.
+ */
+
+message JournalRecord {
+  repeated JournalEntry entry = 1;
+}
+
+/**
+ * a single record in the journal consists of one or more journal entries.
+ *
+ * each entry is targeted at a single resource manager. 
+ *
+ */
+
+message JournalEntry {
+  oneof resource {
+    XLogEntry xlog = 1;
+    TxnAcctEntry txn_acct = 2;
+    StorageEntry storage = 3;
+    HeapEntry heap = 4;
+    IndexEntry index = 5;
+    CheckpointEntry checkpoint = 6;
+    BlobEntry blob = 7;
+  }    
+}
+
+
+
+//
+// --- XLOG ---
+//
+
+message XLogEntry {
+
+  oneof payload {
+    Checkpoint checkpoint = 1;
+  }
+
+  message Checkpoint {
+  
+  }
+
+}
+
+
+
+
+
+
+//
+// --- TxnAcct (TxnAcctLog) ---
+//
+
+message TxnBegin {
+  uint32 txn_id = 1;
+}
+ 
+message TxnCommit {
+  uint32 txn_id = 1;
+}
+ 
+message TxnAbort {
+  uint32 txn_id = 1;
+}
+
+message TxnAcctEntry {
+  oneof payload {
+    TxnBegin txn_begin = 1;
+    TxnCommit txn_commit = 2;
+    TxnAbort txn_abort = 3; 
+  }
+}
+
+
+//
+// --- Storage (StorageManager) ---
+//
+
+message StorageCreate {
+}
+ 
+
+message StorageEntry {
+  oneof payload {
+    StorageCreate create = 1;
+  }
+}
+
+
+
+
+
+//
+// --- Heap ---
+//
+ 
+
+message HeapEntry {
+  oneof payload {
+    StorageCreate create = 1;
+  }
+}
+
+
+
+//
+// --- Index ---
+//
+
+
+message IndexEntry {
+  oneof payload {
+    StorageCreate create = 1;
+  }
+}
+
+
+
+//
+// --- Checkpoint ---
+//
+
+
+message CheckpointEntry {
+  oneof payload {
+    StorageCreate create = 1;
+  }
+}
+
+
+
+//
+// --- Blob ---
+//
+
+
+
+message BlobEntry {
+  oneof payload {
+    StorageCreate create = 1;
+  }
+}
