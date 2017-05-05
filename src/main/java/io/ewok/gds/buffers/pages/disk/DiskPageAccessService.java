@@ -18,11 +18,11 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Sets;
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.util.concurrent.AbstractService;
 
+import io.ewok.gds.buffers.CorruptPageException;
+import io.ewok.gds.buffers.InvalidPageRefException;
 import io.ewok.gds.buffers.pages.PageAccessService;
 import io.ewok.gds.buffers.pages.PageId;
 import io.netty.buffer.ByteBuf;
@@ -42,27 +42,56 @@ import lombok.SneakyThrows;
 
 public class DiskPageAccessService extends AbstractService implements PageAccessService {
 
-	private final HashFunction checksummer = Hashing.crc32c();
+	/**
+	 * A validator for page checksumming.
+	 */
+
+	private final PageValidationProvider checksummer = new GuavaPageValidationProvider(Hashing.crc32c());
+
+	/**
+	 * Options passed to the open() call.
+	 */
 
 	private static final Set<? extends OpenOption> OPEN_OPTIONS = Sets.newHashSet(
 			StandardOpenOption.READ,
 			StandardOpenOption.WRITE,
 			StandardOpenOption.CREATE);
 
+	/**
+	 * Maps the objid and page numbers to filenames and offsets.
+	 */
+
 	private final DiskAccessMapper mapper;
+
+	/**
+	 * Thread pool which does the IO work.
+	 */
 
 	// thread pool for disk IO. this manages the ioq depth.
 	// TODO(tpz): make configurable
 	private final ExecutorService service = Executors.newFixedThreadPool(8);
 
+	/**
+	 *
+	 * @param mapper
+	 */
+
 	public DiskPageAccessService(DiskAccessMapper mapper) {
 		this.mapper = mapper;
 	}
+
+	/**
+	 *
+	 */
 
 	@Override
 	protected void doStart() {
 		super.notifyStarted();
 	}
+
+	/**
+	 *
+	 */
 
 	@Override
 	protected void doStop() {
@@ -77,7 +106,7 @@ public class DiskPageAccessService extends AbstractService implements PageAccess
 	}
 
 	/**
-	 *
+	 * Keep a cache of file descriptors we have open.
 	 */
 
 	private final LoadingCache<Path, AsynchronousFileChannel> channels = CacheBuilder.newBuilder()
@@ -118,7 +147,7 @@ public class DiskPageAccessService extends AbstractService implements PageAccess
 
 	@Override
 	@SneakyThrows
-	public CompletableFuture<?> read(ByteBuf buffer, PageId pageId) {
+	public CompletableFuture<ByteBuf> read(ByteBuf buffer, PageId pageId) {
 
 		// calculate the path for this page.
 		final Path path = this.mapper.map(pageId);
@@ -128,16 +157,25 @@ public class DiskPageAccessService extends AbstractService implements PageAccess
 
 		// fetch the path, then read.
 		this.channels.get(path).read(
-				buffer.nioBuffer(buffer.writerIndex(), 8192), this.offset(pageId), buffer,
+				buffer.nioBuffer(buffer.writerIndex(), 8192), this.mapper.offset(pageId), buffer,
 				new CompletionHandler<Integer, ByteBuf>() {
 
 					@Override
 					public void completed(Integer result, ByteBuf attachment) {
 
+						if (result.intValue() != 8192) {
+							this.failed(new InvalidPageRefException(pageId), attachment);
+							return;
+						}
+
 						try {
-							DiskPageAccessService.this.validateChecksum(buffer);
+							PageUtils.checkIntegrity(buffer, pageId);
+							if (!DiskPageAccessService.this.checksummer.validate(buffer, pageId)) {
+								this.failed(new IllegalStateException("Invalid Checksum"), attachment);
+								return;
+							}
 						} catch (final Exception ex) {
-							this.failed(ex, attachment);
+							this.failed(new CorruptPageException(pageId), attachment);
 							return;
 						}
 
@@ -173,7 +211,10 @@ public class DiskPageAccessService extends AbstractService implements PageAccess
 	@SneakyThrows
 	public CompletableFuture<?> write(ByteBuf buffer, PageId pageId) {
 
-		this.updateChecksum(buffer);
+		PageUtils.checkIntegrity(buffer, pageId);
+
+		// update the checksum.
+		this.checksummer.update(buffer, pageId);
 
 		// calculate the path for this page.
 		final Path path = this.mapper.map(pageId);
@@ -185,7 +226,7 @@ public class DiskPageAccessService extends AbstractService implements PageAccess
 
 		// fetch the path, then write.
 		channel.write(
-				buffer.nioBuffer(buffer.readerIndex(), 8192), this.offset(pageId), buffer,
+				buffer.nioBuffer(buffer.readerIndex(), 8192), this.mapper.offset(pageId), buffer,
 				new CompletionHandler<Integer, ByteBuf>() {
 
 					@Override
@@ -203,48 +244,10 @@ public class DiskPageAccessService extends AbstractService implements PageAccess
 
 	}
 
-	/**
-	 * calculate & set the checksum.
-	 */
-
-	private void updateChecksum(ByteBuf buffer) {
-
-		// calculate checksum
-		final Hasher hash = this.checksummer.newHasher();
-
-		buffer.forEachByte(4, 8188, b -> {
-			hash.putByte(b);
-			return true;
-		});
-
-		buffer.setInt(0, hash.hash().asInt());
-
-	}
-
-	/**
-	 * validate the checksum of the page.
-	 */
-
-	private void validateChecksum(ByteBuf buffer) {
-
-		// calculate checksum
-		final Hasher hash = DiskPageAccessService.this.checksummer.newHasher();
-
-		buffer.forEachByte(4, 8188, b -> {
-			hash.putByte(b);
-			return true;
-		});
-
-		// check the values are equal.
-
-		if (buffer.getInt(0) != hash.hash().asInt()) {
-			throw new IllegalStateException("Checksum failed");
-		}
-
-	}
-
-	private long offset(PageId pageId) {
-		return this.mapper.offset(pageId);
+	public static DiskPageAccessService create(Path base) {
+		final DiskPageAccessService i = new DiskPageAccessService(new DefaultDiskAccessMapper(base));
+		i.startAsync();
+		return i;
 	}
 
 }

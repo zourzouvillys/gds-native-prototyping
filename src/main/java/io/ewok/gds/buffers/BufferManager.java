@@ -1,7 +1,5 @@
 package io.ewok.gds.buffers;
 
-import java.util.function.Consumer;
-
 /**
  * Keeps track of all loaded pages, requests, and flushing.
  *
@@ -71,6 +69,6 @@ public interface BufferManager {
 	 *
 	 */
 
-	void load(long objid, long pageno, Consumer<PageRef> consumer);
+	void load(long objid, long pageno, PageConsumer consumer);
 
 }

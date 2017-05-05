@@ -191,8 +191,8 @@ public class MemoryPageRef implements PageRef {
 		final int offset = this.page.getShort(this.indexOffset(index));
 		final int len = this.page.getShort(this.indexOffset(index) + 2);
 
-		final int xmin = this.page.getInt(offset);
-		final int xmax = this.page.getInt(offset + 4);
+		// final int xmin = this.page.getInt(offset);
+		// final int xmax = this.page.getInt(offset + 4);
 
 		final ByteBuf slice = this.page.slice(offset + 4, len).clear();
 

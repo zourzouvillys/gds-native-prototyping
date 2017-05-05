@@ -1,60 +1,214 @@
 package io.ewok.gds.buffers;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Consumer;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+
+import com.google.common.base.Preconditions;
 
 import io.ewok.gds.buffers.pages.PageAccessService;
 import io.ewok.gds.buffers.pages.PageFork;
 import io.ewok.gds.buffers.pages.PageId;
+import io.ewok.gds.buffers.pages.disk.DiskPageAccessService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class DefaultBufferManager implements BufferManager {
 
 	/**
-	 * Each page which needs to be loaded (or is in the process of being loaded)
-	 * is issued with one of these. If the page is already loaded, then it is
-	 * skipped.
-	 */
-
-	@Value
-	private static class PendingPageLoad {
-
-		/**
-		 * The {@link PageId} that this pending load is for.
-		 */
-
-		private PageId pageId;
-
-		/**
-		 * The consumers which are waiting for this page. We limit the number of
-		 * consumers that can wait on a page.
-		 */
-
-		private final List<Consumer<PageRef>> consumers = new ArrayList<>();
-
-		/**
-		 * the target slot ID for this page when it is loaded. -1 if one has not
-		 * yet been allocated.
-		 */
-
-		private final int targetSlotId = -1;
-
-	}
-
-	/**
 	 * A single pool of buffers.
 	 */
 
 	private class BufferClockPool {
+
+		/**
+		 * An instance of this is allocated when a page load is requested, and
+		 * lasts until the page is evicted.
+		 */
+
+		private class BufferPageLoad {
+
+			/**
+			 * the page being loaded.
+			 */
+
+			PageId pageId = null;
+
+			/**
+			 * the consumers which are waiting for this page.
+			 */
+
+			List<PageConsumer> consumers = new ArrayList<>(8);
+
+			/**
+			 * While retrieving a page, the future which is provided by the page
+			 * access service.
+			 */
+
+			CompletableFuture<ByteBuf> future;
+
+			/**
+			 * The page reference.
+			 */
+
+			MemoryPageRef pageref;
+
+			/**
+			 * How many times the page in this slot has been requested.
+			 */
+
+			int usecount = 0;
+
+			/**
+			 * how many currently active references are using this slot.
+			 */
+
+			int pincount = 0;
+
+			/**
+			 * If the page is dirty and needs to be flushed.
+			 */
+
+			boolean dirty = false;
+
+			/**
+			 * Adds a consumer that wants this page. Dispatches when it becomes
+			 * available.
+			 */
+
+			public void enqueue(PageConsumer consumer) {
+
+				this.usecount++;
+				this.pincount++;
+
+				// if the page is already loaded, we can dispatch straight away.
+				if (this.pageref != null) {
+					throw new RuntimeException();
+				} else {
+					// oterwise we need to enqueue.
+					this.consumers.add(consumer);
+				}
+
+			}
+
+			/**
+			 * when this pending load is assigned a slot, and should perform a
+			 * lot.
+			 *
+			 * @param storage
+			 */
+
+			public void load(PageAccessService storage, ByteBuf buffer) {
+
+				if (this.pageId.getPageId() == -1) {
+
+					// we are creating a new page, so don't need to load
+					// anything.
+
+					this.pageref = new MemoryPageRef(buffer, (int) this.pageId.getObjectId(), 9999, Optional.empty());
+
+					while (!this.consumers.isEmpty()) {
+
+						final PageConsumer consumer = this.consumers.remove(0);
+
+						try {
+							consumer.accept(null, this.pageref);
+						} catch (final Throwable t) {
+							t.printStackTrace();
+						} finally {
+							this.pincount--;
+						}
+
+					}
+
+				} else {
+
+					// request the page from storage.
+					this.future = storage.read(buffer, this.pageId).whenComplete(this::loaded);
+
+				}
+
+			}
+
+			/**
+			 * called back when the disk access service has the page (or an
+			 * error).
+			 *
+			 * this may be called on a disk access thread, so we need to migrate
+			 * it over before dispatching.
+			 *
+			 * @param buf
+			 *            The buffer which has the page in it. The page will be
+			 *            verified and checked.
+			 *
+			 * @param ex
+			 *            The exception, if one occurred.
+			 *
+			 */
+
+			private void loaded(ByteBuf buffer, Throwable ex) {
+
+				this.future = null;
+
+				if (ex != null) {
+
+					// an error occurred while loading this page.
+					// remove ourselves from the slot and dispatch to consumers.
+
+					while (!this.consumers.isEmpty()) {
+
+						final PageConsumer consumer = this.consumers.remove(0);
+
+						try {
+							consumer.accept(ex, null);
+						} catch (final Throwable t) {
+							t.printStackTrace();
+						} finally {
+							this.pincount--;
+						}
+
+					}
+
+					return;
+
+				}
+
+				this.pageref = new MemoryPageRef(
+						buffer,
+						(int) this.pageId.getObjectId(),
+						(int) this.pageId.getPageId(),
+						Optional.empty());
+
+				while (!this.consumers.isEmpty()) {
+
+					final PageConsumer consumer = this.consumers.remove(0);
+
+					try {
+						consumer.accept(null, this.pageref);
+					} catch (final Throwable t) {
+						t.printStackTrace();
+					} finally {
+						this.pincount--;
+					}
+
+				}
+
+			}
+
+			public void unlink() {
+				Preconditions.checkState(this.pincount == 0);
+				Preconditions.checkState(this.usecount == 0);
+			}
+
+		}
 
 		/**
 		 * The direct (off-heap) memory pool that pages are loaded into. We use
@@ -70,34 +224,10 @@ public class DefaultBufferManager implements BufferManager {
 		private final int slots;
 
 		/**
-		 * The java objects which are wrappers around a single page buffer.
+		 * Each loaded buffer in the buffer pool.
 		 */
 
-		private final MemoryPageRef[] pages;
-
-		/**
-		 * a counter of the number of times this slot has been requested. it is
-		 * zeroed when a page is evicted and new one loaded.
-		 */
-
-		private final int[] usecount;
-
-		/**
-		 * the number of pins this buffer has. A slot can not be expired while
-		 * it is pinned.
-		 */
-
-		private final short[] pincount;
-
-		/**
-		 * if the page in this slot is dirty. Changed to true when the page is
-		 * modified, and changed back to false once it is flushed to disk.
-		 *
-		 * TODO: use a bitmap instead?
-		 *
-		 */
-
-		private final boolean[] dirty;
+		private final BufferPageLoad[] buffers;
 
 		/**
 		 * The page allocation pointer, which indicates where in the clock we
@@ -111,22 +241,27 @@ public class DefaultBufferManager implements BufferManager {
 
 		/**
 		 * an index for looking up which pages are currently allocated and in
-		 * the pool.
+		 * the pool as well as pending.
 		 */
 
-		private final Map<PageId, Integer> index;
+		private final Map<PageId, BufferPageLoad> pageIndex;
 
 		/**
-		 * the index of all pending page requests.
+		 * A clock of pending page loads. Already preallocated.
+		 *
+		 * We cycle through and dispatch as buffer space becomes available in a
+		 * FIFO order. The {@link #pendingLoadPointer} indicates where in the
+		 * array wheel we are currently processing.
+		 *
 		 */
 
-		private final PendingPageLoad[] pendingLoads;
+		private final Queue<BufferPageLoad> pendingLoads = new LinkedList<>();
 
 		/**
-		 * pointer to the pending load head.
+		 * The number of allowed backlog work.
 		 */
 
-		private volatile int pendingLoadPointer = 0;
+		private final int backlog;
 
 		/**
 		 * Initialise the pool.
@@ -136,108 +271,17 @@ public class DefaultBufferManager implements BufferManager {
 
 			this.slots = pages;
 
-			this.pages = new MemoryPageRef[this.slots];
-			this.index = new HashMap<>(this.slots);
+			this.buffers = new BufferPageLoad[this.slots];
+			this.pageIndex = new HashMap<>(this.slots + backlog);
 
-			this.usecount = new int[this.slots];
-			this.pincount = new short[this.slots];
-			this.dirty = new boolean[this.slots];
+			this.backlog = backlog;
 
-			this.pendingLoads = new PendingPageLoad[backlog];
-
-			// allocate the memory.
+			// allocate the memory for the buffers.
 			final int bytes = pages * 8192;
 			this.buffer = Unpooled.directBuffer(bytes, bytes);
 
 			log.info("Created page buffer pool of {} pages ({} bytes), queue depth of {} loads.", this.slots, bytes,
 					backlog);
-
-		}
-
-		/**
-		 * Indicates if this page is currently in the cache. If it is, it is
-		 * pinned and returned.
-		 *
-		 * This must be called with a lock.
-		 *
-		 */
-
-		MemoryPageRef peek(PageId pageId) {
-
-			final Integer slotId = this.index.get(pageId);
-
-			if (slotId == null) {
-				// this page is not currently in the cache. it will need to be
-				// loaded.
-				return null;
-			}
-
-			log.info("Fast-path load of page {}", pageId);
-
-			// increment the pincount.
-			this.pincount[slotId]++;
-
-			// increment the load count.
-			this.usecount[slotId]++;
-
-			return this.pages[slotId];
-
-		}
-
-		/**
-		 * when a page is not found in the buffers and needs to be loaded.
-		 *
-		 * we firstly need to find a slot that the buffer can be placed in. Once
-		 * we have a slot, the page is requested from the disk. Finally, once it
-		 * is loaded we dispatch to the consumer requesting it.
-		 *
-		 * @param consumer
-		 *
-		 */
-
-		private void load(PageId pageId, Consumer<PageRef> consumer) {
-
-			log.info("Loading {} for consumer access", pageId);
-
-			// allocate a slot to load a buffer into into by looping until we
-			// are no longer decrementing a use count (meaning all pages are
-			// pinned or dirty and need to be flushed). In that case we are
-			// backlogged and must wait until a slot becomes free either due to
-			// becoming unpinned or because it has been flushed.
-
-			final int slot = this.freeSlot();
-
-			if (slot == -1) {
-				// no slot was found. we need to wait. perhaps we can hurry it
-				// up by flushing?
-				log.warn("No empty slots, waiting");
-				return;
-			}
-
-			log.info("Slot {} free", slot);
-
-			final MemoryPageRef ref = this.fetch(pageId, slot);
-
-			consumer.accept(ref);
-
-			this.unpin(slot);
-
-		}
-
-		private MemoryPageRef fetch(PageId pageId, int slot) {
-
-			final ByteBuf page = this.buffer.retainedSlice(slot * 8192, 8192).clear();
-
-			final MemoryPageRef ref = new MemoryPageRef(page, 0, 0, Optional.empty());
-
-			DefaultBufferManager.this.storage.read(page, pageId);
-
-			this.pages[slot] = ref;
-			this.pincount[slot] = 1;
-			this.usecount[slot] = 1;
-			this.dirty[slot] = false;
-
-			return ref;
 
 		}
 
@@ -265,30 +309,30 @@ public class DefaultBufferManager implements BufferManager {
 
 					final int slot = (this.pageAllocationPointer + i) % this.slots;
 
-					if (this.pages[slot] == null) {
+					if (this.buffers[slot] == null) {
 						// this slot is free, we can use it straight away.
 						this.pageAllocationPointer = slot + 1;
 						return slot;
 					}
 
-					if (this.usecount[slot] > 0) {
+					if (this.buffers[slot].usecount > 0) {
 						// decrement, even if dirty or pinned as long as it has
 						// usecnt.
-						--this.usecount[slot];
+						--this.buffers[slot].usecount;
 						flushed = true;
 					}
 
-					if (this.dirty[slot]) {
+					if (this.buffers[slot].dirty) {
 						// page is dirty, need to skip.
 						continue;
 					}
 
-					if (this.pincount[slot] > 0) {
+					if (this.buffers[slot].pincount > 0) {
 						// page is currently pinned, skip.
 						continue;
 					}
 
-					if (this.usecount[slot] == 0) {
+					if (this.buffers[slot].usecount == 0) {
 						// slot can be reused.
 						this.unlink(slot);
 						this.pageAllocationPointer = slot + 1;
@@ -308,34 +352,85 @@ public class DefaultBufferManager implements BufferManager {
 		 */
 
 		private void unlink(int slot) {
-
 			log.info("Unlinking slot {}", slot);
+			this.buffers[slot].unlink();
+			this.buffers[slot] = null;
+		}
 
-			Objects.requireNonNull(this.pages[slot]);
+		/**
+		 * dispatch a load (or append) request.
+		 *
+		 * returns false if the load is rejected because of too much backlog,
+		 * otherwise true.
+		 *
+		 */
 
-			this.pages[slot].unlink();
+		public boolean dispatch(PageId pageId, PageConsumer consumer) {
 
-			this.pages[slot] = null;
-			this.pincount[slot] = 0;
-			this.usecount[slot] = 0;
-			this.dirty[slot] = false;
+			//
+			BufferPageLoad loadedBuffer = this.pageIndex.get(pageId);
+
+			// if it is already loaded, then skip.
+			if (loadedBuffer != null) {
+				log.info("Fast-path load of page {}", pageId);
+				loadedBuffer.enqueue(consumer);
+				return true;
+			}
+
+			// this page is not currently buffered nor is it pending.
+			// allocate a new load, and try to dispatch.
+
+			if (this.pendingLoads.size() >= this.backlog) {
+				// too much pending work already.
+				return false;
+			}
+
+			// allocate new load.
+
+			loadedBuffer = new BufferPageLoad();
+			loadedBuffer.pageId = pageId;
+			loadedBuffer.enqueue(consumer);
+
+			// if we have a free slot (or can make one available right now
+			// without blocking), dispatch immediately.
+
+			final int slot = this.freeSlot();
+
+			if (slot == -1) {
+				// there are no free slots available, so we need to enqueue.
+				this.pendingLoads.add(loadedBuffer);
+				return true;
+			}
+
+			this.assign(loadedBuffer, slot);
+
+			return true;
 
 		}
 
 		/**
-		 * unpin the given pageId, which must be pinned.
+		 * called when a pending load is assigned a slot.
+		 *
+		 * @param buffer
+		 *            The pending buffer that is being assigned a lot.
+		 * @param slot
+		 *            The slot to place the buffer in. Must be empty (null).
 		 */
 
-		void unpin(PageId pageId) {
-			this.unpin(this.index.get(pageId));
-		}
+		private void assign(BufferPageLoad buffer, int slot) {
 
-		/**
-		 * unpin the page at the given slot.
-		 */
+			// target slot must be empty.
+			Preconditions.checkState(this.buffers[slot] == null);
 
-		void unpin(int slot) {
-			this.pincount[slot]--;
+			// a free slot is available, so assign and load.
+			this.buffers[slot] = buffer;
+
+			// create the slice of the buffer.
+			final ByteBuf page = this.buffer.retainedSlice(slot * 8192, 8192).clear();
+
+			// perform a load request.
+			buffer.load(DefaultBufferManager.this.storage, page);
+
 		}
 
 	}
@@ -351,7 +446,7 @@ public class DefaultBufferManager implements BufferManager {
 	 *
 	 */
 
-	private final BufferClockPool defaultPool = new BufferClockPool(8, 16);
+	private final BufferClockPool defaultPool = new BufferClockPool(8, 8192 * 8);
 
 	/**
 	 * The WAL writer, which is the sink for any page changes. Each write has a
@@ -384,21 +479,47 @@ public class DefaultBufferManager implements BufferManager {
 	 */
 
 	@Override
-	public void load(long objid, long pageno, Consumer<PageRef> consumer) {
+	public void load(long objid, long pageno, PageConsumer consumer) {
 
 		final PageId pageId = new PageId(objid, PageFork.Main, pageno);
 
-		final MemoryPageRef page = this.defaultPool.peek(pageId);
-
-		if (page != null) {
-			consumer.accept(page);
-			this.defaultPool.unpin(pageId);
-			return;
+		if (!this.defaultPool.dispatch(pageId, consumer)) {
+			throw new IllegalStateException("Load rejected, too much work.");
 		}
 
-		// we need to fetch this page from storage.
-		this.defaultPool.load(pageId, consumer);
+	}
 
+	/**
+	 * Allocate and initialise a new page in the given object. The page will be
+	 * persisted as any normal page would.
+	 *
+	 * @param objid
+	 *            The object ID to append a new page to.
+	 *
+	 * @param fork
+	 *            The {@link PageFork} to allocate a page in.
+	 *
+	 * @param consumer
+	 *            The handler that is called when the page has been allocated.
+	 *
+	 */
+
+	public void append(long objid, PageFork fork, PageConsumer consumer) {
+
+		final PageId pageId = new PageId(objid, PageFork.Main, -1);
+
+		if (!this.defaultPool.dispatch(pageId, consumer)) {
+			throw new IllegalStateException("Append rejected, too much work.");
+		}
+
+	}
+
+	/**
+	 *
+	 */
+
+	public static DefaultBufferManager create(Path base) {
+		return new DefaultBufferManager(DiskPageAccessService.create(base));
 	}
 
 }

@@ -2,6 +2,7 @@ package io.ewok.gds.buffers.pages;
 
 import java.util.concurrent.CompletableFuture;
 
+import io.ewok.gds.buffers.InvalidPageRefException;
 import io.netty.buffer.ByteBuf;
 
 /**
@@ -24,9 +25,23 @@ public interface PageAccessService {
 	 *            Offset in the file to load.
 	 *
 	 * @return A future which will complete when the operation has completed.
+	 *
+	 * @throws InvalidPageRefException
+	 *             The referenced page does not exist. Retrying the operation
+	 *             will not succeed.
+	 *
+	 * @throws CorruptPageException
+	 *             The requested page was corrupted, and could not be recovered.
+	 *             Retryign the operation without a recovery operaiton will
+	 *             cause the same error.
+	 *
+	 * @throws PageUnavailableException
+	 *             The page is currently unavailable, but may be available
+	 *             later.
+	 *
 	 */
 
-	public CompletableFuture<?> read(ByteBuf buffer, PageId pageId);
+	public CompletableFuture<ByteBuf> read(ByteBuf buffer, PageId pageId);
 
 	/**
 	 * Perform a write from disk.

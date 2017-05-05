@@ -56,7 +56,6 @@ public class DefaultDiskAccessMapper implements DiskAccessMapper {
 		final String file = String.format("%08X", page.getObjectId());
 		final String part = String.format("%d", (int) Math.floor(page.getPageId() / this.pagesPerFile));
 		return this.base.resolve(Paths.get(file + "." + part + "." + this.getExtension(page.getForkId())));
-
 	}
 
 	/**

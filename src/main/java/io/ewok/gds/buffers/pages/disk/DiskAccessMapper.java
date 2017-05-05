@@ -23,8 +23,6 @@ import io.ewok.gds.buffers.pages.PageId;
  *
  * The index keeps track of the objects and their status.
  *
- *
- *
  * @author theo
  *
  */

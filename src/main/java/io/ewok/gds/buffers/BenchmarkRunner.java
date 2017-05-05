@@ -1,4 +1,4 @@
-package io.ewok.gds.buffers.pages.disk;
+package io.ewok.gds.buffers;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -7,64 +7,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 
-import org.junit.Test;
-
 import io.ewok.gds.buffers.pages.PageFork;
 import io.ewok.gds.buffers.pages.PageId;
+import io.ewok.gds.buffers.pages.disk.DefaultDiskAccessMapper;
+import io.ewok.gds.buffers.pages.disk.DiskPageAccessService;
+import io.ewok.gds.buffers.pages.disk.PageUtils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-public class DiskAccessServiceTest {
+public class BenchmarkRunner {
 
-	// @Test
-	public void test() throws InterruptedException, ExecutionException, IOException {
-
-		final Path base = Paths.get("/tmp/gds");
-
-		java.nio.file.Files.createDirectories(base);
-
-		final DiskPageAccessService disk = new DiskPageAccessService(new DefaultDiskAccessMapper(base));
-
-		try {
-			final ByteBuf readA = Unpooled.buffer(8192);
-			final ByteBuf readB = Unpooled.buffer(8192);
-			final ByteBuf writeA = Unpooled.buffer(8192);
-			final ByteBuf writeB = Unpooled.buffer(8192);
-
-			writeA.writeZero(8192);
-			writeB.writeZero(8192);
-
-			for (int i = 0; i < 10; ++i) {
-				writeA.setIndex(0, 0);
-				disk.write(writeA, new PageId(0, PageFork.Main, i)).get();
-			}
-
-			for (int i = 2; i < 500_000 / 2; ++i) {
-
-				writeA.setIndex(0, 0);
-				final CompletableFuture<?> f1a = disk.write(writeA, new PageId(0, PageFork.Main, i));
-
-				writeB.setIndex(0, 0);
-				final CompletableFuture<?> f1b = disk.write(writeB, new PageId(0, PageFork.Main, i + 1));
-
-				readA.setIndex(0, 0);
-				final CompletableFuture<?> f2a = disk.read(readA, new PageId(0, PageFork.Main, i - 2));
-
-				readB.setIndex(0, 0);
-				final CompletableFuture<?> f2b = disk.read(readB, new PageId(0, PageFork.Main, i - 1));
-
-				CompletableFuture.allOf(f1a, f1b, f2a, f2b).get();
-
-			}
-
-		} finally {
-			disk.stopAsync().awaitTerminated();
-		}
-
-	}
-
-	@Test
-	public void testWriteOnly() throws InterruptedException, ExecutionException, IOException {
+	public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
 
 		final Path base = Paths.get("/tmp/gds");
 
@@ -83,14 +36,13 @@ public class DiskAccessServiceTest {
 				write[i] = Unpooled.directBuffer(8192, 8192);
 				write[i].writeZero(8192);
 
-
-				// layout & version: first 4 bits are version, second 4 are page size.
+				// layout & version: first 4 bits are version, second 4 are page
+				// size.
 				write[i].setByte(0, PageUtils.layout(1, 8192));
 				// freeStart
 				write[i].setShort(16, 22);
 				// freeEnd
 				write[i].setShort(18, 8192);
-
 
 			}
 
