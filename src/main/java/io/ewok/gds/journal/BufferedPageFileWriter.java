@@ -4,23 +4,37 @@ import java.util.concurrent.CompletableFuture;
 
 import io.ewok.gds.storage.AsyncFileIO;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+import io.netty.buffer.ByteBufAllocator;
 
-public class PagePool {
+/**
+ * A writer which has a local buffer that is written to. It can be flushed at
+ * any time, and will write pages out when they are full.
+ *
+ * @author theo
+ *
+ */
+
+public class BufferedPageFileWriter {
 
 	private final int pageSize;
 	private final AsyncFileIO file;
 
 	private long nextPosition = -1;
 
-	private final ByteBuf page = Unpooled.directBuffer(8192 * 16, 8192 * 16);
-
 	// the offset where the head of the page currently is.
 	private int head = 0;
+	private final ByteBuf buffer;
 
-	public PagePool(int pageSize, AsyncFileIO file) {
+	/**
+	 *
+	 * @param pageSize
+	 * @param file
+	 */
+
+	public BufferedPageFileWriter(int pageSize, AsyncFileIO file) {
 		this.pageSize = pageSize;
 		this.file = file;
+		this.buffer = ByteBufAllocator.DEFAULT.directBuffer(pageSize * 128, pageSize * 128);
 	}
 
 	/**
@@ -37,9 +51,9 @@ public class PagePool {
 
 	public CompletableFuture<?> seek(int position) {
 		// load the page
-		return this.file.read(this.page, this.pageOffset(position), this.pageSize).thenRun(() -> {
+		return this.file.read(this.buffer, this.pageOffset(position), this.pageSize).thenRun(() -> {
 			this.head = position;
-			this.page.writerIndex(position % this.pageSize);
+			this.buffer.writerIndex(position % this.pageSize);
 			this.nextPosition = position;
 		});
 	}
@@ -49,25 +63,26 @@ public class PagePool {
 	 */
 
 	public void writeBytes(ByteBuf data) {
-		this.page.writeBytes(data);
+		this.buffer.writeBytes(data);
 	}
 
 	/**
 	 * perform a flush of all dirty pages.
 	 */
 
-	public CompletableFuture<?> flush() {
+	public CompletableFuture<?> flush(long until) {
 		return this.file
-				.write(this.page, this.head, this.page.readableBytes())
-				.thenApplyAsync(val -> this.file.flush());
+				.write(this.buffer, this.head, this.buffer.readableBytes())
+				.thenAccept(len -> this.buffer.discardReadBytes())
+				.thenApplyAsync((Object val) -> this.file.flush());
 	}
 
 	public void writeShort(int i) {
-		this.page.writeShort(i);
+		this.buffer.writeShort(i);
 	}
 
 	public void writeInt(int i) {
-		this.page.writeInt(i);
+		this.buffer.writeInt(i);
 	}
 
 	public int writeVarUInt32(int value) {
@@ -75,10 +90,10 @@ public class PagePool {
 		while (true) {
 			if ((value & ~0x7F) == 0) {
 				len++;
-				this.page.writeByte((byte) value);
+				this.buffer.writeByte((byte) value);
 				return len;
 			} else {
-				this.page.writeByte((byte) ((value & 0x7F) | 0x80));
+				this.buffer.writeByte((byte) ((value & 0x7F) | 0x80));
 				value >>>= 7;
 				len++;
 			}
@@ -86,7 +101,7 @@ public class PagePool {
 	}
 
 	public void writeBytes(byte[] record) {
-		this.page.writeBytes(record);
+		this.buffer.writeBytes(record);
 	}
 
 }

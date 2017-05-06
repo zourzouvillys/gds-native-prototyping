@@ -4,28 +4,31 @@ import java.util.concurrent.CompletableFuture;
 
 import io.ewok.gds.journal.messages.JournalEntry;
 import io.ewok.gds.journal.messages.JournalRecord;
-import io.ewok.gds.wal.WAL;
 import io.ewok.gds.work.WorkContext;
 import io.ewok.gds.work.WorkLimitUnit;
 import lombok.NonNull;
 
 public class Journal implements WAL {
 
+	private final JournalWriter writer;
+
 	/**
-	 * Our position in the WAL.
+	 *
 	 */
 
-	private long currentOffset = 0;
+	public Journal(JournalWriter writer) {
+		this.writer = writer;
+	}
 
 	/**
 	 * Write an entry, and then flush the journal to disk.
 	 */
 
 	@Override
-	public CompletableFuture<Long> writeAndFlush(WorkContext ctx) {
+	public CompletableFuture<Long> writeAndFlush(WorkContext ctx, JournalEntry... entry) {
 		ctx.consume(WorkLimitUnit.JournalFlush, 1);
-		final long offset = this.write(ctx);
-		return CompletableFuture.completedFuture(offset);
+		final long offset = this.write(ctx, entry);
+		return this.writer.flush(offset).thenApply(x -> offset);
 	}
 
 	/**
@@ -39,32 +42,15 @@ public class Journal implements WAL {
 
 		final JournalRecord.Builder builder = JournalRecord.newBuilder();
 
-		int bytes = 0;
-
 		for (final JournalEntry entry : entries) {
-			bytes += entry.getSerializedSize();
 			builder.addEntry(entry);
 		}
 
-		ctx.consume(WorkLimitUnit.JournalBytes, bytes);
+		final JournalRecord record = builder.build();
 
-		return this.send(builder);
+		ctx.consume(WorkLimitUnit.JournalBytes, record.getSerializedSize());
 
-	}
-
-	/**
-	 * Append journal record to the current page. We don't perform any sync.
-	 */
-
-	private long send(JournalRecord.Builder record) {
-
-		final JournalRecord je = record.build();
-
-		final int size = je.getSerializedSize();
-
-		this.currentOffset += size;
-
-		return this.currentOffset;
+		return this.writer.append(record.toByteArray());
 
 	}
 

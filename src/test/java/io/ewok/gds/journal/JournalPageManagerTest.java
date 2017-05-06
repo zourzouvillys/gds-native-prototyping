@@ -15,8 +15,8 @@ public class JournalPageManagerTest {
 		final JournalWriter w = new JournalWriter(Paths.get("/tmp/gds"), 0x1);
 		w.create(0);
 		w.append("HELLO".getBytes());
-		w.append(Unpooled.directBuffer().writeInt(Integer.MAX_VALUE - 1));
-		w.flush().get();
+		final long offset = w.append(Unpooled.directBuffer().writeInt(Integer.MAX_VALUE - 1));
+		w.flush(offset).get();
 	}
 
 	@Test

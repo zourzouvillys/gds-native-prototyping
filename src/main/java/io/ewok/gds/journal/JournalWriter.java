@@ -45,7 +45,7 @@ public class JournalWriter {
 
 	private AsyncFileIO segment;
 
-	private PagePool pages;
+	private BufferedPageFileWriter pages;
 
 	/**
 	 *
@@ -68,7 +68,7 @@ public class JournalWriter {
 		final Path segment = this.folder
 				.resolve(JournalFileUtils.segment(this.timeline, this.segmentSize, nextPosition));
 		this.segment = AsyncFileIO.open(segment).get();
-		this.pages = new PagePool(this.blockSize, this.segment);
+		this.pages = new BufferedPageFileWriter(this.blockSize, this.segment);
 		this.pages.seek(JournalFileUtils.segmentOffset(this.segmentSize, nextPosition)).get();
 		this.nextPosition = nextPosition;
 	}
@@ -83,7 +83,7 @@ public class JournalWriter {
 		final Path segment = this.folder
 				.resolve(JournalFileUtils.segment(this.timeline, this.segmentSize, nextPosition));
 		this.segment = AsyncFileIO.create(segment, this.segmentSize).get();
-		this.pages = new PagePool(this.blockSize, this.segment);
+		this.pages = new BufferedPageFileWriter(this.blockSize, this.segment);
 		this.pages.seek(0).get();
 		this.nextPosition = nextPosition;
 	}
@@ -152,8 +152,13 @@ public class JournalWriter {
 
 	}
 
-	public CompletableFuture<?> flush() {
-		return this.pages.flush();
+	public CompletableFuture<?> flush(long until) {
+		return this.pages.flush(until);
 	}
+
+	public CompletableFuture<?> flush() {
+		return this.flush(this.nextPosition);
+	}
+
 
 }

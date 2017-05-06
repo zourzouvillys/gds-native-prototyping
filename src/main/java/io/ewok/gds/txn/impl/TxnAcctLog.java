@@ -1,9 +1,11 @@
 package io.ewok.gds.txn.impl;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import io.ewok.gds.journal.JournalEntries;
-import io.ewok.gds.wal.WAL;
+import io.ewok.gds.journal.WAL;
 import io.ewok.gds.work.WorkContext;
 import io.ewok.gds.work.WorkLimitUnit;
 
@@ -51,6 +53,8 @@ public class TxnAcctLog {
 
 	private volatile int nextXID = 1;
 
+	private final Map<Integer, XID> transactions = new HashMap<>();
+
 	/**
 	 * Initialise with the WAL.
 	 */
@@ -77,7 +81,11 @@ public class TxnAcctLog {
 
 		this.wal.write(ctx, JournalEntries.txnBegin(0));
 
-		return -1;
+		// set the transaction flags
+
+		this.transactions.put(this.nextXID, new XID(this.nextXID));
+
+		return this.nextXID++;
 
 	}
 
@@ -90,7 +98,8 @@ public class TxnAcctLog {
 	 */
 
 	public void abort(WorkContext ctx, int xid) {
-		this.wal.write(ctx);
+		this.transactions.get(xid).aborted();
+		this.wal.write(ctx, JournalEntries.txnAbort(xid));
 	}
 
 	/**
@@ -102,7 +111,8 @@ public class TxnAcctLog {
 	 */
 
 	public CompletableFuture<?> commit(WorkContext ctx, int xid) {
-		return this.wal.writeAndFlush(ctx);
+		this.transactions.get(xid).commited();
+		return this.wal.writeAndFlush(ctx, JournalEntries.txnCommit(xid));
 	}
 
 }

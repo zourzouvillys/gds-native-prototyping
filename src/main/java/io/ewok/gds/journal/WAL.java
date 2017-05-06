@@ -1,4 +1,4 @@
-package io.ewok.gds.wal;
+package io.ewok.gds.journal;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -12,7 +12,7 @@ public interface WAL {
 	 * ensuring durability.
 	 */
 
-	CompletableFuture<Long> writeAndFlush(WorkContext ctx);
+	CompletableFuture<Long> writeAndFlush(WorkContext ctx, JournalEntry... entry);
 
 	/**
 	 * Write the given message out to the log.
