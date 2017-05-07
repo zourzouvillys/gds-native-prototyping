@@ -3,7 +3,9 @@ package io.ewok.linux;
 import java.nio.file.Path;
 
 import com.sun.jna.Library;
+import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
+import com.sun.jna.ptr.PointerByReference;
 
 /**
  * Exposes glibc functions.
@@ -23,6 +25,8 @@ public interface GLIBC extends Library {
 	Pointer malloc(long size);
 
 	void free(Pointer ptr);
+
+	int posix_memalign(PointerByReference memptr, NativeLong alignment, NativeLong size);
 
 	long syscall(int number, Object... args);
 

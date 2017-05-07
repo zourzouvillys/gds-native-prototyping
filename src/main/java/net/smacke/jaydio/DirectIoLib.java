@@ -428,10 +428,10 @@ public class DirectIoLib {
 	// -- more native function hooks --
 
 	public static int SEEK_SET = 0;
-	public static int SEEK_CUR = 0;
-	public static int SEEK_END = 0;
-	public static int SEEK_DATA = 0;
-	public static int SEEK_HOLE = 0;
+	public static int SEEK_CUR = 1;
+	public static int SEEK_END = 2;
+	//	public static int SEEK_DATA = 0;
+	//	public static int SEEK_HOLE = 0;
 
 	public static native long lseek64(int fd, long offset, int whence);
 

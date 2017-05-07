@@ -1,13 +1,27 @@
 package io.ewok.linux.io;
 
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.attribute.FileAttribute;
-import java.util.concurrent.CompletableFuture;
+import com.google.common.base.Preconditions;
+import com.sun.jna.Memory;
+import com.sun.jna.Pointer;
 
 import io.ewok.linux.JLinux;
+import io.ewok.linux.ProcFS;
+import io.netty.buffer.ByteBuf;
+
+/**
+ * Linux kernel async io api wrapper.
+ *
+ * @author theo
+ *
+ */
 
 public class AsyncDiskContext implements AutoCloseable {
+
+	/**
+	 * The default size of the queue.
+	 */
+
+	public static final int DEFAULT_QUEUE_DEPTH = 128;
 
 	/**
 	 * The context, 0 if not open.
@@ -16,73 +30,58 @@ public class AsyncDiskContext implements AutoCloseable {
 	private long ctx = 0;
 
 	/**
-	 * Initialise the disk context.
-	 *
-	 * @param nr_events
-	 *            number of concurrent io operations to be supported by this
-	 *            context.
+	 * The number of queued events in this context.
 	 */
 
-	public void init(int nr_events) {
-		this.ctx = JLinux.io_setup(nr_events);
+	private final int nr_events;
+
+	/**
+	 * the allocated memory used for the control blocks. this will be enough to
+	 * store all of the control blocks that could be queued.
+	 */
+
+	private final Memory memory;
+
+	/**
+	 * The available control blocks.
+	 */
+
+	private final AsyncControlBlock[] cbs;
+
+	/**
+	 *
+	 */
+
+	private int nextSlot = 0;
+
+	/**
+	 * allocate memory for the control blocks.
+	 */
+
+	private AsyncDiskContext(int nr_events) {
+		Preconditions.checkArgument(nr_events > 0 && nr_events <= ProcFS.sys_fs_aiomaxnr());
+		this.nr_events = nr_events;
+		this.cbs = new AsyncControlBlock[nr_events];
+
+		// todo: align on this?
+		final int align = AsyncControlBlock.SIZE;
+
+		this.memory = new Memory((nr_events * AsyncControlBlock.SIZE) + align).align(align);
+
+		for (int i = 0; i < nr_events; ++i) {
+			this.cbs[i] = new AsyncControlBlock(this.memory.share(i * AsyncControlBlock.SIZE, AsyncControlBlock.SIZE));
+		}
+
 	}
 
 	/**
-	 * open an existing file for reading using async io, using O_DIRECT.
-	 *
-	 * can block on io: because there is no async mechanism for opening a file,
-	 * we do this in a thread from the caching thread pool.
-	 *
-	 * The priority indicates how urgent the open operation itself is.
-	 *
-	 * note that a single file can be opened multiple times.
-	 *
+	 * Open the IO context.
 	 */
 
-	public CompletableFuture<AsyncFile> open(Path file, AsyncDiskPriority priority) {
-		return null;
-	}
-
-	/**
-	 * create a new file and open it for using with async io, using O_DIRECT.
-	 *
-	 * this can block on io: because there is no async mechanism for opening a
-	 * file, we do this in a thread from the caching thread pool.
-	 *
-	 * The priority indicates how urgent the open operation itself is.
-	 *
-	 * if this file already exists, the call with fail.
-	 *
-	 * @param prealloc_bytes
-	 *            The number of bytes to preallocate space for. Ideally, this
-	 *            should be set to the final size of the file, if it is known in
-	 *            advance. Appending small chunks of data at a time to enlarge a
-	 *            file will have significant performance penalties when writing.
-	 *
-	 */
-
-	public CompletableFuture<AsyncFile> create(
-			Path file,
-			long prealloc_bytes,
-			AsyncDiskPriority priority,
-			FileAttribute<?>... attrs) {
-
-		// open as a temp file in the same folder
-		final int fd = JLinux.open(file.getParent(),
-				JLinux.O_TMPFILE | JLinux.O_DIRECT | JLinux.O_DSYNC | JLinux.O_RDWR,
-				JLinux.S_IWUSR | JLinux.S_IRUSR);
-
-		// preallocate the space
-		JLinux.fallocate(fd, JLinux.FALLOC_FL_KEEP_SIZE, 0, prealloc_bytes);
-
-		// move to the actual destination
-		JLinux.linkat(
-				Paths.get("/proc/self/fd/").resolve(Integer.toString(fd)),
-				file,
-				JLinux.AT_SYMLINK_FOLLOW);
-
-		return CompletableFuture.completedFuture(null);
-
+	private void setup() {
+		Preconditions.checkState(this.ctx == 0L);
+		this.memory.clear();
+		this.ctx = JLinux.io_setup(this.nr_events);
 	}
 
 	/**
@@ -100,10 +99,45 @@ public class AsyncDiskContext implements AutoCloseable {
 	 * @return
 	 */
 
-	public static AsyncDiskContext open(int nr_events) {
-		final AsyncDiskContext io = new AsyncDiskContext();
-		io.init(nr_events);
+	public static AsyncDiskContext create(int nr_events) {
+		final AsyncDiskContext io = new AsyncDiskContext(nr_events);
+		io.setup();
 		return io;
+	}
+
+	/**
+	 * Create a new async io disk context with the default queue depth.
+	 */
+
+	public static AsyncDiskContext createDefault() {
+		return create(DEFAULT_QUEUE_DEPTH);
+	}
+
+	/**
+	 * Perform an async read for this file.
+	 *
+	 * @param io
+	 * @param buf
+	 * @param offset
+	 * @param length
+	 */
+
+	public void read(BlockFileHandle fd, ByteBuf buf, long offset, long length) {
+
+		// set up the control block.
+		final Pointer iocb = this.cbs[this.nextSlot++].pread(fd, new Pointer(buf.memoryAddress()), offset, length);
+
+		// submit the iocb
+		JLinux.io_submit(this.ctx, iocb);
+
+		// return
+
+	}
+
+	public void events() {
+
+		JLinux.io_getevents(this.ctx, 0, 6);
+
 	}
 
 }
