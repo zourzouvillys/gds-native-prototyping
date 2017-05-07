@@ -1,5 +1,7 @@
 package io.ewok.linux;
 
+import java.nio.file.Path;
+
 import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.ptr.LongByReference;
@@ -14,6 +16,64 @@ import com.sun.jna.ptr.PointerByReference;
 
 public final class JLinux {
 
+	/**
+	 * file types
+	 */
+
+	// bit mask for the file type bit field
+	public static final int S_IFMT = 0170000;
+	// socket
+	public static final int S_IFSOCK = 0140000;
+	// symbolic link
+	public static final int S_IFLNK = 0120000;
+	// regular file
+	public static final int S_IFREG = 0100000;
+	// block device
+	public static final int S_IFBLK = 0060000;
+	// directory
+	public static final int S_IFDIR = 0040000;
+	// character device
+	public static final int S_IFCHR = 0020000;
+	// FIFO
+	public static final int S_IFIFO = 0010000;
+
+	/**
+	 * file modes
+	 */
+
+	// user (file owner) has read, write, and execute permission
+	public static final int S_IRWXU = 00700;
+
+	// user has read permission
+	public static final int S_IRUSR = 00400;
+	// user has write permission
+	public static final int S_IWUSR = 00200;
+	// user has execute permission
+	public static final int S_IXUSR = 00100;
+	// group has read, write, and execute permission
+	public static final int S_IRWXG = 00070;
+	// group has read permission
+	public static final int S_IRGRP = 00040;
+	// group has write permission
+	public static final int S_IWGRP = 00020;
+	// group has execute permission
+	public static final int S_IXGRP = 00010;
+	// others have read, write, and execute permission
+	public static final int S_IRWXO = 00007;
+	// others have read permission
+	public static final int S_IROTH = 00004;
+	// others have write permission
+	public static final int S_IWOTH = 00002;
+	// others have execute permission
+	public static final int S_IXOTH = 00001;
+
+	// set-user-ID bit
+	public static final int S_ISUID = 0004000;
+	// set-group-ID bit (see inode(7)).
+	public static final int S_ISGID = 0002000;
+	// sticky bit (see inode(7)).
+	public static final int S_ISVTX = 0001000;
+
 	/*
 	 * misc constants
 	 */
@@ -21,7 +81,160 @@ public final class JLinux {
 	public static final int F_GETFL = 3;
 	public static final int F_SETFL = 4;
 
-	public static final int O_NONBLOCK = 0x2000;
+	/**
+	 *
+	 */
+
+	public static final int O_ACCMODE = 00000003;
+	public static final int O_RDONLY = 00000000;
+	public static final int O_WRONLY = 00000001;
+	public static final int O_RDWR = 00000002;
+
+	/**
+	 * fcntl
+	 */
+
+	public static final int O_ASYNC = 00020000;
+
+	/**
+	 *
+	 */
+
+	public static final int O_APPEND = 00002000;
+	public static final int O_CLOEXEC = 02000000;
+	public static final int O_CREAT = 00000100;
+	public static final int O_DIRECT = 00040000;
+	public static final int O_DIRECTORY = 00200000;
+	public static final int O_DSYNC = 00010000;
+	public static final int O_EXCL = 00000200;
+	public static final int O_LARGEFILE = 00100000;
+	public static final int O_NOATIME = 01000000;
+	public static final int O_NOCTTY = 00000400;
+	public static final int O_NOFOLLOW = 00400000;
+	public static final int O_NONBLOCK = 00004000;
+	public static final int O_PATH = 010000000;
+	public static final int O_SYNC = 04000000 | O_DSYNC;
+	public static final int O_TMPFILE = 020000000 | O_DIRECTORY;
+	public static final int O_TRUNC = 00001000;
+
+	/**
+	 * open() a file.
+	 *
+	 * @param path
+	 * @param flags
+	 * @param mode
+	 * @return
+	 */
+
+	public static int open(Path path, int flags, int mode) {
+		final long fd = NativeLinux.libc.syscall(SYSCALL64.open, path.toString(), flags, mode);
+		if (fd == -1) {
+			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
+		}
+		return (int) fd;
+	}
+
+	/**
+	 *
+	 */
+
+	public static final int AT_FDCWD = -100;
+
+	public static final int AT_EMPTY_PATH = 0x1000;
+	public static final int AT_SYMLINK_FOLLOW = 0x400;
+
+	/**
+	 *
+	 * @param oldfd
+	 * @param oldpath
+	 * @param newdir
+	 * @param newpath
+	 * @param flags
+	 */
+
+	public static void linkat(int oldfd, Path oldpath, int newdir, Path newpath, int flags) {
+		final long fd = NativeLinux.libc.syscall(
+				SYSCALL64.linkat,
+				oldfd,
+				oldpath.toString(),
+				newdir,
+				newpath.toString(),
+				flags);
+		if (fd == -1) {
+			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
+		}
+	}
+
+	public static void linkat(Path oldpath, Path newpath, int flags) {
+		linkat(AT_FDCWD, oldpath, AT_FDCWD, newpath, flags);
+	}
+
+	public static void ioctl() {
+		throw new RuntimeException("not implemented");
+	}
+
+	public static void statx(int dirfd, Path pathname, int flags, int mask) {
+		final Memory ptr = new Memory(118);
+		final long fd = NativeLinux.libc.syscall(SYSCALL64.statx, dirfd, pathname.toString(), flags, mask, ptr);
+		if (fd == -1) {
+			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
+		}
+		throw new RuntimeException("not implemented");
+	}
+
+	/**
+	 *
+	 */
+
+	public static String statfs(Path file) {
+		final Memory ptr = new Memory(118);
+		final long fd = NativeLinux.libc.syscall(SYSCALL64.statx, file.toString(), ptr);
+		if (fd == -1) {
+			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
+		}
+		throw new RuntimeException("not implemented");
+	}
+
+	/**
+	 * Stats the file
+	 *
+	 * @param file
+	 * @return
+	 */
+
+	public static Stat stat(Path file) {
+
+		final Memory ptr = new Memory(144);
+
+		final long fd = NativeLinux.libc.syscall(SYSCALL64.stat, file.toString(), ptr);
+
+		if (fd == -1) {
+			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
+		}
+
+		return new Stat(ptr);
+
+	}
+
+	/**
+	 * The system pagesize
+	 */
+
+	public static int pagesize() {
+		return NativeLinux.libc.getpagesize();
+	}
+
+	public static long sysconf(int name) {
+		return NativeLinux.libc.sysconf(name);
+	}
+
+	public static long fpathconf(int fd, int name) {
+		return NativeLinux.libc.fpathconf(fd, name);
+	}
+
+	public static long pathconf(Path path, int name) {
+		return NativeLinux.libc.pathconf(path, name);
+	}
 
 	/**
 	 * uname.
@@ -88,6 +301,35 @@ public final class JLinux {
 
 	public static int fcntl(int fd, int cmd, int arg) {
 		final long res = NativeLinux.libc.syscall(SYSCALL64.fcntl, fd, cmd, arg);
+		if (res == -1) {
+			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
+		}
+		return (int) res;
+	}
+
+	/**
+	 *
+	 */
+
+	public static final int FALLOC_FL_KEEP_SIZE = 0x01;
+	public static final int FALLOC_FL_PUNCH_HOLE = 0x02;
+	public static final int FALLOC_FL_NO_HIDE_STALE = 0x04;
+
+	public static final int FALLOC_FL_ZERO_RANGE = 0x10;
+	public static final int FALLOC_FL_INSERT_RANGE = 0x20;
+	public static final int FALLOC_FL_UNSHARE_RANGE = 0x40;
+
+	/**
+	 * fallocate
+	 *
+	 * @param fd
+	 * @param cmd
+	 * @param arg
+	 * @return
+	 */
+
+	public static int fallocate(int fd, int mode, long offset, long length) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.fallocate, fd, mode, offset, length);
 		if (res == -1) {
 			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
 		}
@@ -186,6 +428,8 @@ public final class JLinux {
 
 	public static final long io_setup(int num) {
 		final LongByReference ref = new LongByReference();
+		// must be initialized to 0
+		ref.setValue(0);
 		if (NativeLinux.libc.syscall(SYSCALL64.io_setup, num, ref) != 0) {
 			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
 		}

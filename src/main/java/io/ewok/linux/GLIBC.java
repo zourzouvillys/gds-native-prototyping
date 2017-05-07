@@ -1,5 +1,7 @@
 package io.ewok.linux;
 
+import java.nio.file.Path;
+
 import com.sun.jna.Library;
 import com.sun.jna.Pointer;
 
@@ -16,6 +18,8 @@ import com.sun.jna.Pointer;
 
 public interface GLIBC extends Library {
 
+	int getpagesize();
+
 	Pointer malloc(long size);
 
 	void free(Pointer ptr);
@@ -23,5 +27,11 @@ public interface GLIBC extends Library {
 	long syscall(int number, Object... args);
 
 	String strerror(int errno);
+
+	long sysconf(int name);
+
+	long fpathconf(int fd, int name);
+
+	long pathconf(Path path, int name);
 
 }
