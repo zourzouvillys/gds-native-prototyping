@@ -34,4 +34,7 @@ public interface GLIBC extends Library {
 
 	long pathconf(Path path, int name);
 
+	int gnu_dev_major(long id);
+	int gnu_dev_minor(long id);
+
 }

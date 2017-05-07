@@ -30,16 +30,20 @@ public class Stat {
 
 	public Stat(Memory ptr) {
 
-		this.deviceId = ptr.getLong(0);
+		this.deviceId = ptr.getLong(0) >> 8;
+
 		this.inode = ptr.getLong(8);
 		this.numLinks = ptr.getLong(16);
-
 		this.mode = ptr.getInt(24);
+
 		this.userId = ptr.getInt(28);
 		this.groupId = ptr.getInt(32);
 
+		// skip int padding.
+
 		this.rdev = ptr.getLong(40);
 		this.size = ptr.getLong(48);
+
 		this.blockSize = ptr.getLong(56);
 		this.num512kBlocks = ptr.getLong(64);
 
@@ -47,6 +51,15 @@ public class Stat {
 		this.modifyTime = Instant.ofEpochMilli((ptr.getLong(88) * 1000) + (ptr.getLong(96) / 1000 / 1000));
 		this.creationTime = Instant.ofEpochMilli((ptr.getLong(104) * 1000) + (ptr.getLong(112) / 1000 / 1000));
 
+
+	}
+
+	public long getDeviceMajor() {
+		return NativeLinux.libc.gnu_dev_major(this.deviceId);
+	}
+
+	public long getDeviceMinor() {
+		return NativeLinux.libc.gnu_dev_minor(this.deviceId);
 	}
 
 }

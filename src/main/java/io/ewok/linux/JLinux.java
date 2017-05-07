@@ -7,6 +7,8 @@ import com.sun.jna.Native;
 import com.sun.jna.ptr.LongByReference;
 import com.sun.jna.ptr.PointerByReference;
 
+import lombok.SneakyThrows;
+
 /**
  * Native linux API syscalls.
  *
@@ -66,7 +68,6 @@ public final class JLinux {
 	public static final int S_IWOTH = 00002;
 	// others have execute permission
 	public static final int S_IXOTH = 00001;
-
 	// set-user-ID bit
 	public static final int S_ISUID = 0004000;
 	// set-group-ID bit (see inode(7)).
@@ -186,14 +187,15 @@ public final class JLinux {
 	 *
 	 */
 
-	public static String statfs(Path file) {
-		final Memory ptr = new Memory(118);
-		final long fd = NativeLinux.libc.syscall(SYSCALL64.statx, file.toString(), ptr);
+	public static StatFS statfs(Path file) {
+		final Memory ptr = new Memory(88 + 32);
+		final long fd = NativeLinux.libc.syscall(SYSCALL64.stat, file.toString(), ptr);
 		if (fd == -1) {
 			throw new RuntimeException(NativeLinux.libc.strerror(Native.getLastError()));
 		}
-		throw new RuntimeException("not implemented");
+		return new StatFS(ptr);
 	}
+
 
 	/**
 	 * Stats the file
@@ -202,9 +204,12 @@ public final class JLinux {
 	 * @return
 	 */
 
+	@SneakyThrows
 	public static Stat stat(Path file) {
 
 		final Memory ptr = new Memory(144);
+
+		ptr.clear();
 
 		final long fd = NativeLinux.libc.syscall(SYSCALL64.stat, file.toString(), ptr);
 

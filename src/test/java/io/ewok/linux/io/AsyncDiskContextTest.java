@@ -12,7 +12,7 @@ public class AsyncDiskContextTest {
 	@Test
 	public void test() throws InterruptedException, ExecutionException {
 
-		System.err.println(JLinux.stat(Paths.get("/tmp/moo")));;
+		System.err.println(JLinux.stat(Paths.get("/tmp/moo")));
 
 
 		try (final AsyncDiskContext io = AsyncDiskContext.open(1024)) {
