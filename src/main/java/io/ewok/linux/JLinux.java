@@ -316,6 +316,200 @@ public final class JLinux {
 		return NativeLinux.libc.pathconf(path, name);
 	}
 
+	/*
+	 *
+	 */
+
+	public static final int PROT_READ = 0x1;
+	public static final int PROT_WRITE = 0x2;
+	public static final int PROT_EXEC = 0x4;
+	public static final int PROT_SEM = 0x8;
+	public static final int PROT_NONE = 0x0;
+
+	//
+
+	public static final int MAP_SHARED = 0x01;
+	public static final int MAP_PRIVATE = 0x02;
+
+	//
+
+	public static final int MAP_FIXED = 0x10;
+	public static final int MAP_ANONYMOUS = 0x20;
+	public static final int MAP_UNINITIALIZED = 0x4000000;
+
+	//
+
+	public static final int MAP_FILE = 16;
+
+	public static final int MAP_GROWSDOWN = 0x0100;
+	public static final int MAP_DENYWRITE = 0x0800;
+	public static final int MAP_EXECUTABLE = 0x1000;
+	public static final int MAP_LOCKED = 0x2000;
+	public static final int MAP_NORESERVE = 0x4000;
+	public static final int MAP_POPULATE = 0x8000;
+	public static final int MAP_NONBLOCK = 0x10000;
+	public static final int MAP_STACK = 0x20000;
+	public static final int MAP_HUGETLB = 0x40000;
+
+	//
+
+	// public static final int MAP_32BIT = 0;
+	// public static final int MAP_HUGE_2MB = 0;
+	// public static final int MAP_HUGE_1GB = 0;
+
+	/*
+	 *
+	 */
+
+	public static final int MS_ASYNC = 1;
+	public static final int MS_INVALIDATE = 2;
+	public static final int MS_SYNC = 4;
+
+	/*
+	 *
+	 */
+
+	public static final int MCL_CURRENT = 1;
+	public static final int MCL_FUTURE = 2;
+	public static final int MCL_ONFAULT = 4;
+
+	/*
+	 *
+	 */
+
+	public static final int MADV_NORMAL = 0;
+	public static final int MADV_RANDOM = 1;
+	public static final int MADV_SEQUENTIAL = 2;
+	public static final int MADV_WILLNEED = 3;
+	public static final int MADV_DONTNEED = 4;
+
+	//
+
+	public static final int MADV_FREE = 8;
+	public static final int MADV_REMOVE = 9;
+	public static final int MADV_DONTFORK = 10;
+	public static final int MADV_DOFORK = 11;
+	public static final int MADV_HWPOISON = 100;
+	public static final int MADV_SOFT_OFFLINE = 101;
+
+	public static final int MADV_MERGEABLE = 12;
+	public static final int MADV_UNMERGEABLE = 13;
+
+	public static final int MADV_HUGEPAGE = 14;
+	public static final int MADV_NOHUGEPAGE = 15;
+
+	public static final int MADV_DONTDUMP = 16;
+	public static final int MADV_DODUMP = 16;
+
+	/*
+	 * When MAP_HUGETLB is set bits [26:31] encode the log2 of the huge page
+	 * size. This gives us 6 bits, which is enough until someone invents 128 bit
+	 * address spaces.
+	 *
+	 * Assume these are all power of twos. When 0 use the default page size.
+	 */
+
+	public static final int MAP_HUGE_SHIFT = 26;
+	public static final int MAP_HUGE_MASK = 0x3f;
+
+	/**
+	 *
+	 * @param addr
+	 * @param length
+	 * @param prot
+	 * @param flags
+	 * @param fd
+	 * @param offset
+	 * @return
+	 */
+
+	public static long mmap(long addr, long length, int prot, int flags, int fd, long offset) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.mmap, addr, length, prot, flags, fd, offset);
+		if (res < 0) {
+			throw LinuxErrorException.capture("mmap", addr, length, prot, flags, fd, offset);
+		}
+		return res;
+	}
+
+	/**
+	 *
+	 * @param addr
+	 * @param length
+	 * @param flags
+	 * @return
+	 */
+
+	public static long msync(long addr, long length, int flags) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.msync, addr, length, flags);
+		if (res != 0) {
+			throw LinuxErrorException.capture("msync", addr, length);
+		}
+		return res;
+	}
+
+	/**
+	 *
+	 * @param addr
+	 * @param length
+	 * @param flags
+	 * @return
+	 */
+
+	public static long mremap(long old_address, long old_size, long new_size, int flags) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.mremap, old_address, old_size, new_size, flags);
+		if (res != 0) {
+			throw LinuxErrorException.capture("mremap", old_address, old_size, new_size, flags);
+		}
+		return res;
+	}
+
+	/**
+	 *
+	 * @param addr
+	 * @param length
+	 * @param flags
+	 * @return
+	 */
+
+	public static long mlock(long address, long len, int flags) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.mlock2, address, len, flags);
+		if (res != 0) {
+			throw LinuxErrorException.capture("mlock2", address, len, flags);
+		}
+		return res;
+	}
+
+	/**
+	 *
+	 * @param addr
+	 * @param length
+	 * @param flags
+	 * @return
+	 */
+
+	public static long madvise(long address, long len, int advice) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.madvise, address, len, advice);
+		if (res != 0) {
+			throw LinuxErrorException.capture("mlock2", address, len, advice);
+		}
+		return res;
+	}
+
+	/**
+	 *
+	 * @param addr
+	 * @param length
+	 * @return
+	 */
+
+	public static long munmap(long addr, long length) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.munmap, addr, length);
+		if (res < 0) {
+			throw LinuxErrorException.capture("munmap", addr, length);
+		}
+		return res;
+	}
+
 	/**
 	 *
 	 */
@@ -641,14 +835,13 @@ public final class JLinux {
 		}
 	}
 
-	public static final void io_submit(long ctx, Pointer iocbs, int num) {
+	public static final int io_submit(long ctx, Pointer iocbs, int num) {
 		final long res = NativeLinux.libc.syscall(SYSCALL64.io_submit, ctx, num, iocbs);
 		if (res != num) {
 			throw LinuxErrorException.capture("io_submit", ctx, iocbs, num);
 		}
+		return (int) res;
 	}
-
-
 
 	/**
 	 *

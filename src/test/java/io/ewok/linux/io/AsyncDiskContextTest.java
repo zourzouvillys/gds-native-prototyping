@@ -7,10 +7,9 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import org.junit.Test;
 
-import io.ewok.io.BlockFileHandle;
-import io.ewok.io.BlockFileMode;
 import io.ewok.io.EwokPlatform;
-import io.netty.buffer.ByteBuf;
+import io.ewok.io.PageBuffer;
+import io.ewok.io.ReadBlockFileHandle;
 
 public class AsyncDiskContextTest {
 
@@ -22,7 +21,7 @@ public class AsyncDiskContextTest {
 		// try (BlockFileHandle tmp =
 		// BlockFiles.createTempFile(Paths.get("/tmp"), 8192)) {
 
-		try (final BlockFileHandle fd = EwokPlatform.fs().openExisting(file.resolve("moo"), BlockFileMode.ReadWrite)) {
+		try (final ReadBlockFileHandle fd = EwokPlatform.fs().openExistingForRead(file.resolve("moo"))) {
 
 			// BlockFiles.unlink(file.resolve("moo"));
 
@@ -43,18 +42,17 @@ public class AsyncDiskContextTest {
 
 			final ThreadLocalRandom random = ThreadLocalRandom.current();
 
-			final AsyncResult[] results = AsyncResult.allocate(ioq);
+			final AsyncBlockResult[] results = AsyncBlockResult.allocate(ioq);
 
 			final long start = System.currentTimeMillis();
-
 
 			try (final AsyncDiskContext io = AsyncDiskContext.create(ioq)) {
 
 				int num = 0;
 
 				for (int i = 0; i < ioq; ++i) {
-					final ByteBuf buf = pool.allocate(1);
-					io.write(fd, buf, random.nextInt(0, pages - 1) * 4096, readSize, buf);
+					final PageBuffer buf = pool.allocate();
+					io.read(fd, buf, random.nextInt(0, pages - 1) * 4096, readSize, buf);
 					num++;
 				}
 
@@ -64,9 +62,9 @@ public class AsyncDiskContextTest {
 
 					for (int i = 0; i < done; ++i) {
 
-						final AsyncResult result = results[i];
+						final AsyncBlockResult result = results[i];
 
-						final Object buf = result.attachment;
+						final PageBuffer buf = (PageBuffer) result.attachment;
 
 						if (result.result != readSize) {
 							throw new RuntimeException(Long.toString(result.result));
@@ -82,7 +80,7 @@ public class AsyncDiskContextTest {
 								System.err.println(remaining);
 							}
 							num++;
-							io.write(fd, (ByteBuf) (buf), random.nextInt(0, pages - 1) * 4096, readSize, buf);
+							io.read(fd, buf, random.nextInt(0, pages - 1) * 4096, readSize, buf);
 						}
 
 					}
@@ -97,7 +95,7 @@ public class AsyncDiskContextTest {
 
 			final double secs = (System.currentTimeMillis() - start) / 1000.0;
 
-			System.err.println(String.format("%d in %.2f secs (%.02f iops/sec, %.2f MB/sec)", total, secs, total / secs,
+			System.err.println(String.format("%,d in %,.2f secs (%,.0f iops/sec, %,.0f MB/sec)", total, secs, total / secs,
 					bytes / secs / 1024 / 1024));
 
 		}

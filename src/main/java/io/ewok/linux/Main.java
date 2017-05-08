@@ -4,13 +4,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.ThreadLocalRandom;
 
-import io.ewok.io.BlockFileHandle;
-import io.ewok.io.BlockFileMode;
 import io.ewok.io.EwokPlatform;
+import io.ewok.io.PageBuffer;
+import io.ewok.io.ReadBlockFileHandle;
 import io.ewok.linux.io.AlignedByteBufPool;
+import io.ewok.linux.io.AsyncBlockResult;
 import io.ewok.linux.io.AsyncDiskContext;
-import io.ewok.linux.io.AsyncResult;
-import io.netty.buffer.ByteBuf;
 
 public class Main {
 
@@ -72,7 +71,7 @@ public class Main {
 		System.err.println("File Size  : " + nbytes);
 		System.err.println("Num. Pages : " + pages);
 
-		try (final BlockFileHandle fd = EwokPlatform.fs().openExisting(file, BlockFileMode.ReadWrite)) {
+		try (final ReadBlockFileHandle fd = EwokPlatform.fs().openExistingForRead(file)) {
 
 			final AlignedByteBufPool pool = new AlignedByteBufPool(pageSize, ioq);
 
@@ -80,7 +79,7 @@ public class Main {
 
 			final ThreadLocalRandom random = ThreadLocalRandom.current();
 
-			final AsyncResult[] results = AsyncResult.allocate(ioq);
+			final AsyncBlockResult[] results = AsyncBlockResult.allocate(ioq);
 
 			final long start = System.currentTimeMillis();
 
@@ -89,8 +88,8 @@ public class Main {
 				int num = 0;
 
 				for (int i = 0; i < ioq; ++i) {
-					final ByteBuf buf = pool.allocate(1);
-					io.write(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
+					final PageBuffer buf = pool.allocate();
+					io.read(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, null, buf);
 					num++;
 				}
 
@@ -98,9 +97,11 @@ public class Main {
 
 					final int nr = io.events(results);
 
+
+
 					for (int i = 0; i < nr; ++i) {
 
-						final AsyncResult result = results[i];
+						final AsyncBlockResult result = results[i];
 
 						if (result.result != readSize) {
 							throw new RuntimeException("failed: " + result.result);
@@ -108,7 +109,7 @@ public class Main {
 
 						Main.bytes += result.result;
 
-						final ByteBuf buf = (ByteBuf) result.attachment;
+						final PageBuffer buf = (PageBuffer) result.attachment;
 
 						--num;
 
@@ -118,11 +119,7 @@ public class Main {
 								System.err.println(remaining);
 							}
 							num++;
-							if (num % 2 == 0) {
-								io.write(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
-							} else {
-								io.write(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
-							}
+							io.read(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
 						}
 
 					}

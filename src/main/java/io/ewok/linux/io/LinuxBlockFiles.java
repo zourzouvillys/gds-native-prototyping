@@ -5,7 +5,6 @@ import java.util.Objects;
 
 import com.google.common.base.Preconditions;
 
-import io.ewok.io.BlockFileMode;
 import io.ewok.io.BlockSystem;
 import io.ewok.linux.JLinux;
 import io.ewok.linux.Stat;
@@ -67,7 +66,7 @@ public final class LinuxBlockFiles implements BlockSystem {
 			handle.linkat(file);
 
 			// now open the file at its new path using standard openExisting.
-			return this.openExisting(file, BlockFileMode.ReadWrite);
+			return this.openExisting(file);
 
 		}
 
@@ -123,8 +122,7 @@ public final class LinuxBlockFiles implements BlockSystem {
 	 *
 	 */
 
-	@Override
-	public LinuxBlockFileHandle openExisting(Path file, BlockFileMode mode) {
+	LinuxBlockFileHandle openExisting(Path file, LinuxFileHandleMode mode) {
 
 		int flags = JLinux.O_DIRECT | JLinux.O_DSYNC;
 
@@ -159,6 +157,21 @@ public final class LinuxBlockFiles implements BlockSystem {
 	@Override
 	public Stat stat(Path file) {
 		return JLinux.stat(file);
+	}
+
+	@Override
+	public LinuxBlockFileHandle openExisting(Path file) {
+		return this.openExisting(file, LinuxFileHandleMode.ReadWrite);
+	}
+
+	@Override
+	public LinuxBlockFileHandle openExistingForRead(Path file) {
+		return this.openExisting(file, LinuxFileHandleMode.ReadOnly);
+	}
+
+	@Override
+	public LinuxBlockFileHandle openExistingForWrite(Path file) {
+		return this.openExisting(file, LinuxFileHandleMode.WriteOnly);
 	}
 
 }

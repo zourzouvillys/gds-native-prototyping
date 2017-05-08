@@ -41,4 +41,6 @@ public interface GLIBC extends Library {
 	int gnu_dev_major(long id);
 	int gnu_dev_minor(long id);
 
+	void memcpy(long dest, long src, long n);
+
 }

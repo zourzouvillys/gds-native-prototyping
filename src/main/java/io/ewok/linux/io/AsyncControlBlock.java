@@ -5,6 +5,8 @@ import java.util.Objects;
 import com.google.common.base.Preconditions;
 import com.sun.jna.Pointer;
 
+import io.ewok.io.BlockAccessCallback;
+import io.ewok.io.PagePointer;
 import io.ewok.linux.JLinux;
 import lombok.Getter;
 
@@ -21,13 +23,18 @@ public class AsyncControlBlock {
 	public static final int SIZE = 64;
 
 	private final Pointer ipcbp;
+	volatile AsyncControlBlock next = null;
 
 	@Getter
 	private final int slot;
 
-	private Object data;
+	PagePointer page;
+	BlockAccessCallback<?> callback;
+	Object data;
+	byte op;
+	long bytes;
 
-	volatile AsyncControlBlock next = null;
+
 
 	public AsyncControlBlock(int slot, Pointer ptr) {
 		this.slot = slot;
@@ -35,12 +42,19 @@ public class AsyncControlBlock {
 		this.ipcbp.clear(SIZE);
 	}
 
-	public Pointer pread(LinuxBlockFileHandle fd, long memoryAddress, long offset, long nbytes, Object data) {
+	public Pointer pread(LinuxBlockFileHandle fd, PagePointer page, long offset, long nbytes,
+			BlockAccessCallback<?> callback, Object data) {
 
+		Objects.requireNonNull(page);
+		Objects.requireNonNull(callback);
 		Preconditions.checkArgument(fd.fd >= 0);
 
 		// the data associated
+		this.callback = callback;
 		this.data = data;
+		this.page = page;
+		this.op = JLinux.IOCB_CMD_PREAD;
+		this.bytes = nbytes;
 
 		// __u64 aio_data; /* data to be returned in event's data */
 		this.ipcbp.setLong(0, this.slot);
@@ -62,7 +76,7 @@ public class AsyncControlBlock {
 		this.ipcbp.setInt(20, fd.fd);
 
 		// __u64 aio_buf;
-		this.ipcbp.setLong(24, memoryAddress);
+		this.ipcbp.setLong(24, page.memoryAddress());
 
 		// __u64 aio_nbytes;
 		this.ipcbp.setLong(32, nbytes);
@@ -91,18 +105,23 @@ public class AsyncControlBlock {
 
 	}
 
-	public Object clear() {
-		final Object res = this.data;
+	public void clear() {
 		this.data = null;
-		return res;
+		this.callback = null;
+		this.page = null;
 	}
 
-	public Pointer pwrite(LinuxBlockFileHandle fd, long memoryAddress, long offset, long nbytes, Object attachment) {
+	public Pointer pwrite(LinuxBlockFileHandle fd, PagePointer page, long offset, long nbytes,
+			BlockAccessCallback<?> cb, Object attachment) {
 
 		Preconditions.checkArgument(fd.fd >= 0);
 
 		// the data associated
+		this.page = page;
+		this.callback = cb;
 		this.data = attachment;
+		this.op = JLinux.IOCB_CMD_PWRITE;
+		this.bytes = nbytes;
 
 		// __u64 aio_data; /* data to be returned in event's data */
 		this.ipcbp.setLong(0, this.slot);
@@ -124,7 +143,7 @@ public class AsyncControlBlock {
 		this.ipcbp.setInt(20, fd.fd);
 
 		// __u64 aio_buf;
-		this.ipcbp.setLong(24, memoryAddress);
+		this.ipcbp.setLong(24, page.memoryAddress());
 
 		// __u64 aio_nbytes;
 		this.ipcbp.setLong(32, nbytes);

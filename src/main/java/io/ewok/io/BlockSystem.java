@@ -32,7 +32,7 @@ public interface BlockSystem {
 	 *
 	 */
 
-	BlockFileHandle createFile(Path file, long prealloc_bytes);
+	ReadWriteBlockFileHandle createFile(Path file, long prealloc_bytes);
 
 	/**
 	 * Create a new file without preallocting any space, failing if the file
@@ -61,13 +61,13 @@ public interface BlockSystem {
 	 * @return
 	 */
 
-	public BlockFileHandle createTempFile(Path dir, long prealloc_bytes);
+	public ReadWriteBlockFileHandle createTempFile(Path dir, long prealloc_bytes);
 
 	/**
 	 * Create a temporary file without any preallocated space.
 	 */
 
-	public default BlockFileHandle createTempFile(Path dir) {
+	public default ReadWriteBlockFileHandle createTempFile(Path dir) {
 		return createTempFile(dir, 0);
 	}
 
@@ -83,7 +83,19 @@ public interface BlockSystem {
 	 *
 	 */
 
-	public BlockFileHandle openExisting(Path file, BlockFileMode mode);
+	public ReadWriteBlockFileHandle openExisting(Path file);
+
+	/**
+	 *
+	 */
+
+	public ReadBlockFileHandle openExistingForRead(Path file);
+
+	/**
+	 *
+	 */
+
+	public WriteBlockFileHandle openExistingForWrite(Path file);
 
 	/**
 	 * Unlink this file from the filesystem asynchronously.

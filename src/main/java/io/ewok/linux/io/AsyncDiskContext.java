@@ -1,14 +1,20 @@
 package io.ewok.linux.io;
 
+import java.util.concurrent.Executor;
+
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.sun.jna.Memory;
 import com.sun.jna.Pointer;
 
+import io.ewok.io.BlockAccessCallback;
 import io.ewok.io.BlockAccessService;
-import io.ewok.io.BlockFileHandle;
+import io.ewok.io.PagePointer;
+import io.ewok.io.ReadBlockFileHandle;
+import io.ewok.io.WriteBlockFileHandle;
 import io.ewok.linux.JLinux;
 import io.ewok.linux.ProcFS;
-import io.netty.buffer.ByteBuf;
+import lombok.Getter;
 
 /**
  * Linux kernel async io api wrapper.
@@ -18,6 +24,13 @@ import io.netty.buffer.ByteBuf;
  */
 
 public class AsyncDiskContext implements BlockAccessService {
+
+	/**
+	 * mmm, stats
+	 */
+
+	@Getter
+	private final AsyncDiskStats stats = new AsyncDiskStats();
 
 	/**
 	 * The default size of the queue.
@@ -67,6 +80,8 @@ public class AsyncDiskContext implements BlockAccessService {
 	private int inqpos = 0;
 
 	private final Object[] results;
+
+	private int outstanding = 0;
 
 	/**
 	 * allocate memory for the control blocks.
@@ -170,18 +185,22 @@ public class AsyncDiskContext implements BlockAccessService {
 	 */
 
 	@Override
-	public <T> void read(BlockFileHandle bfh, ByteBuf buf, long offset, long length, T attachment) {
+	public <T> void read(ReadBlockFileHandle bfh, PagePointer buf, long offset, long length, BlockAccessCallback<T> cb,
+			T attachment) {
 
-		final LinuxBlockFileHandle fd = (LinuxBlockFileHandle)bfh;
+		final LinuxBlockFileHandle fd = (LinuxBlockFileHandle) bfh;
 
 		// allocate a control block for this op
 		final AsyncControlBlock iocb = this.alloc();
 
 		// set up the control block.
-		final Pointer ptr = iocb.pread(fd, buf.memoryAddress(), offset, length, attachment);
+		final Pointer ptr = iocb.pread(fd, buf, offset, length, cb, attachment);
 
-		// set the syscall pointer
+		// set the pointer on the inq
 		this.inq.setPointer((this.inqpos++ * 8), ptr);
+
+		this.stats.read_ops.getAndIncrement();
+		this.stats.buffered.getAndIncrement();
 
 		// flush if we have no space left, even if not requested
 		if (this.inqpos == this.nr_events) {
@@ -190,20 +209,23 @@ public class AsyncDiskContext implements BlockAccessService {
 
 	}
 
-
 	@Override
-	public <T> void write(BlockFileHandle bfh, ByteBuf buf, long offset, long length, T attachment) {
+	public <T> void write(WriteBlockFileHandle bfh, PagePointer buf, long offset, long length,
+			BlockAccessCallback<T> cb, T attachment) {
 
-		final LinuxBlockFileHandle fd = (LinuxBlockFileHandle)bfh;
+		final LinuxBlockFileHandle fd = (LinuxBlockFileHandle) bfh;
 
 		// allocate a control block for this op
 		final AsyncControlBlock iocb = this.alloc();
 
 		// set up the control block.
-		final Pointer ptr = iocb.pwrite(fd, buf.memoryAddress(), offset, length, attachment);
+		final Pointer ptr = iocb.pwrite(fd, buf, offset, length, cb, attachment);
 
 		// set the syscall pointer
 		this.inq.setPointer((this.inqpos++ * 8), ptr);
+
+		this.stats.write_ops.getAndIncrement();
+		this.stats.buffered.getAndIncrement();
 
 		// flush if we have no space left, even if not requested
 		if (this.inqpos == this.nr_events) {
@@ -217,7 +239,14 @@ public class AsyncDiskContext implements BlockAccessService {
 		if (this.inqpos > 0) {
 			final int nr = this.inqpos;
 			this.inqpos = 0;
-			JLinux.io_submit(this.ctx, this.inq, nr);
+			this.stats.flushes.getAndIncrement();
+			final int calc = JLinux.io_submit(this.ctx, this.inq, nr);
+			this.outstanding += calc;
+			this.stats.buffered.addAndGet(-calc);
+			this.stats.pending.addAndGet(calc);
+			if (calc != nr) {
+				throw new RuntimeException(String.format("%d != %d", calc, nr));
+			}
 		}
 	}
 
@@ -226,9 +255,16 @@ public class AsyncDiskContext implements BlockAccessService {
 	 */
 
 	@Override
-	public int events(AsyncResult[] results) {
+	public int events(AsyncBlockResult[] results) {
 
-		final int nrevents = JLinux.io_getevents(this.ctx, 1, results.length, this.mem);
+		if (this.outstanding == 0) {
+			return 0;
+		}
+
+		final int nrevents = JLinux.io_getevents(this.ctx, 1, Math.min(this.outstanding, results.length), this.mem);
+
+		this.outstanding -= nrevents;
+		this.stats.pending.addAndGet(-nrevents);
 
 		// __u64 data; /* the data field from the iocb */
 		// __u64 obj; /* what iocb this event came from */
@@ -243,11 +279,26 @@ public class AsyncDiskContext implements BlockAccessService {
 
 			final AsyncControlBlock iocb = this.iocbs[(int) slot];
 
+			switch (iocb.op) {
+				case JLinux.IOCB_CMD_PREAD:
+					this.stats.read_bytes.addAndGet(iocb.bytes);
+					break;
+				case JLinux.IOCB_CMD_PWRITE:
+					this.stats.write_bytes.addAndGet(iocb.bytes);
+					break;
+			}
+
 			results[i].result = ptr.getLong(16);
 			results[i].result2 = ptr.getLong(24);
-			results[i].attachment = iocb.clear();
+			results[i].callback = iocb.callback;
+			results[i].page = iocb.page;
+			results[i].attachment = iocb.data;
 
-			this.results[i] = iocb.clear();
+			if (results[i].result < 0) {
+				this.stats.errors.getAndIncrement();
+			} else {
+				this.stats.success.getAndIncrement();
+			}
 
 			this.free(iocb);
 
@@ -261,6 +312,48 @@ public class AsyncDiskContext implements BlockAccessService {
 
 		return nrevents;
 
+	}
+
+	public int outstanding() {
+		return this.outstanding;
+	}
+
+	public int dispatch(AsyncBlockResult[] res) {
+		return this.dispatch(res, MoreExecutors.directExecutor());
+	}
+
+	/**
+	 * Polls for events, and dispatches any on the given executor.
+	 *
+	 * @param res
+	 *            An array of result slots. Must not be reused until the
+	 *            executor has finished dispatching any work.
+	 *
+	 * @param executor
+	 *            The executor to dispatch on.
+	 *
+	 * @return
+	 */
+
+	public int dispatch(AsyncBlockResult[] res, Executor executor) {
+		final int nr = this.events(res);
+		for (int i = 0; i < nr; ++i) {
+			executor.execute(res[i]);
+		}
+		return nr;
+	}
+
+	/**
+	 *
+	 */
+
+	@Override
+	public String toString() {
+		final StringBuilder sb = new StringBuilder();
+		sb.append("aio(");
+		sb.append(this.stats);
+		sb.append(")");
+		return sb.toString();
 	}
 
 }

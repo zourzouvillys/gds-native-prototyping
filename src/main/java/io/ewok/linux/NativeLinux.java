@@ -9,13 +9,21 @@ import com.sun.jna.Platform;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class NativeLinux {
-
+public final class NativeLinux {
 
 	// package visibility
 	static GLIBC libc;
 
 	private static boolean binit;
+
+	public static String strerror(int errno) {
+		return libc.strerror(errno);
+	}
+
+	public static void memcpy(long dest, long src, long n) {
+		libc.memcpy(dest, src, n);
+	}
+
 
 	static {
 
@@ -61,9 +69,9 @@ public class NativeLinux {
 
 				if (binit) {
 
-					//Native.setProtected(true);
+					// Native.setProtected(true);
 
-					//Native.register(Platform.C_LIBRARY_NAME);
+					// Native.register(Platform.C_LIBRARY_NAME);
 
 					NativeLinux.libc = Native.loadLibrary("c", GLIBC.class);
 

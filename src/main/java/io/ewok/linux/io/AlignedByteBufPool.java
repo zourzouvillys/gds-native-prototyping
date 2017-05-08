@@ -3,7 +3,9 @@ package io.ewok.linux.io;
 import com.google.common.base.Preconditions;
 
 import io.ewok.io.PageBuffer;
-import io.ewok.io.PageBufferAllocator;
+import io.ewok.io.PageBufferPool;
+import io.ewok.io.utils.BlockSizeUnits;
+import io.ewok.io.utils.BlockUtils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import lombok.Getter;
@@ -18,7 +20,7 @@ import lombok.Getter;
  *
  */
 
-public class AlignedByteBufPool implements PageBufferAllocator {
+public class AlignedByteBufPool implements PageBufferPool {
 
 	private final int pageSize;
 
@@ -27,11 +29,11 @@ public class AlignedByteBufPool implements PageBufferAllocator {
 	private final ByteBuf pool;
 	private int slot;
 
-	public AlignedByteBufPool(int pageSize, int numpages) {
+	public AlignedByteBufPool(long pageSize, int numpages) {
 		this(pageSize, numpages, pageSize);
 	}
 
-	public AlignedByteBufPool(int pageSize, int numpages, int align) {
+	public AlignedByteBufPool(long pageSize, int numpages, long align) {
 
 		Preconditions.checkArgument(pageSize > 0, pageSize);
 		Preconditions.checkArgument(numpages > 0, numpages);
@@ -41,11 +43,11 @@ public class AlignedByteBufPool implements PageBufferAllocator {
 			throw new IllegalArgumentException("Alignment must be a power of 2");
 		}
 
-		this.pageSize = pageSize;
+		this.pageSize = (int) pageSize;
 		this.numpages = numpages;
 
-		final int capacity = (pageSize * numpages);
-		final int alloc = capacity + align;
+		final int capacity = (this.pageSize * numpages);
+		final int alloc = capacity + (int) align;
 		final ByteBuf buffy = ByteBufAllocator.DEFAULT.directBuffer(alloc, alloc);
 
 		final long address = buffy.memoryAddress();
@@ -86,6 +88,24 @@ public class AlignedByteBufPool implements PageBufferAllocator {
 
 	public void reset() {
 		this.slot = 0;
+	}
+
+	@Override
+	public int available() {
+		return this.numpages - this.slot;
+	}
+
+	/**
+	 * Create a new pool of pages, aligned to the page size.
+	 *
+	 * @param pageSize
+	 * @param size
+	 * @param unit
+	 * @return
+	 */
+
+	public static PageBufferPool createAligned(long pageSize, long size, BlockSizeUnits unit) {
+		return new AlignedByteBufPool(pageSize, BlockUtils.pagesForSize(pageSize, size, unit));
 	}
 
 }

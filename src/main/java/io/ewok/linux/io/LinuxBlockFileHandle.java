@@ -4,9 +4,8 @@ import java.nio.file.Path;
 
 import com.google.common.base.Preconditions;
 
-import io.ewok.io.BlockFileHandle;
+import io.ewok.io.ReadWriteBlockFileHandle;
 import io.ewok.linux.JLinux;
-import io.netty.buffer.ByteBuf;
 
 /**
  * An opened file handle which is backed by a disk file.
@@ -15,7 +14,7 @@ import io.netty.buffer.ByteBuf;
  *
  */
 
-public final class LinuxBlockFileHandle implements BlockFileHandle {
+public final class LinuxBlockFileHandle implements ReadWriteBlockFileHandle {
 
 	/**
 	 * the provided kernel FD.
@@ -39,8 +38,10 @@ public final class LinuxBlockFileHandle implements BlockFileHandle {
 	 * @param bytes
 	 */
 
-	public void preallocate(long bytes) {
+	@Override
+	public LinuxBlockFileHandle preallocate(long bytes) {
 		JLinux.fallocate(this.fd, JLinux.FALLOC_FL_KEEP_SIZE, 0, bytes);
+		return this;
 	}
 
 	/**
@@ -58,16 +59,14 @@ public final class LinuxBlockFileHandle implements BlockFileHandle {
 		this.fd = -1;
 	}
 
+	@Override
 	public LinuxBlockFileHandle flush() {
 		return this;
 	}
 
-	public LinuxBlockFileHandle write(ByteBuf buf) {
-		return this;
-	}
-
-	public <T> void write(LinuxBlockFileHandle fd, ByteBuf buf, long offset, long length, T attachment) {
-
+	@Override
+	public long pageSize() {
+		return 4096L;
 	}
 
 }
