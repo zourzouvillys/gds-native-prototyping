@@ -3,12 +3,25 @@ package io.ewok.linux.io;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 
+/**
+ * A pool of {@link ByteBuf} instances which are always aligned.
+ *
+ * The buffers are returned to the pool after being released.
+ *
+ * @author theo
+ *
+ */
+
 public class AlignedByteBufPool {
 
 	private final int pageSize;
 	private final int numpages;
 	private final ByteBuf pool;
 	private int slot;
+
+	public AlignedByteBufPool(int pageSize, int numpages) {
+		this(pageSize, numpages, pageSize);
+	}
 
 	public AlignedByteBufPool(int pageSize, int numpages, int align) {
 
@@ -43,6 +56,10 @@ public class AlignedByteBufPool {
 		final ByteBuf res = this.pool.slice((this.pageSize * this.slot), alloc);
 		this.slot += numPages;
 		return res;
+	}
+
+	public void reset() {
+		this.slot = 0;
 	}
 
 }

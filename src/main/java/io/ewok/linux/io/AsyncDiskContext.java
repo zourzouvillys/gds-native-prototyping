@@ -43,35 +43,80 @@ public class AsyncDiskContext implements AutoCloseable {
 	private final Memory memory;
 
 	/**
-	 * The available control blocks.
+	 *
 	 */
 
-	private final AsyncControlBlock[] cbs;
+	private final AsyncControlBlock[] iocbs;
 
 	/**
 	 *
 	 */
 
-	private int nextSlot = 0;
+	private AsyncControlBlock freehead = null;
+	private AsyncControlBlock freetail = null;
+
+	/**
+	 *
+	 */
+
+	private final Memory mem;
+	private final Memory inq;
+
+	private int inqpos = 0;
+
+	private final Object[] results;
 
 	/**
 	 * allocate memory for the control blocks.
 	 */
 
 	private AsyncDiskContext(int nr_events) {
+
 		Preconditions.checkArgument(nr_events > 0 && nr_events <= ProcFS.sys_fs_aiomaxnr());
+
 		this.nr_events = nr_events;
-		this.cbs = new AsyncControlBlock[nr_events];
+		this.mem = new Memory(32 * nr_events);
+		this.inq = new Memory(8 * nr_events);
 
 		// todo: align on this?
 		final int align = AsyncControlBlock.SIZE;
 
 		this.memory = new Memory((nr_events * AsyncControlBlock.SIZE) + align).align(align);
 
+		this.results = new Object[nr_events];
+
+		this.iocbs = new AsyncControlBlock[nr_events];
+
 		for (int i = 0; i < nr_events; ++i) {
-			this.cbs[i] = new AsyncControlBlock(this.memory.share(i * AsyncControlBlock.SIZE, AsyncControlBlock.SIZE));
+			final AsyncControlBlock iocb = new AsyncControlBlock(i,
+					this.memory.share(i * AsyncControlBlock.SIZE, AsyncControlBlock.SIZE));
+			this.iocbs[i] = iocb;
+			this.free(iocb);
 		}
 
+	}
+
+	private AsyncControlBlock alloc() {
+		Preconditions.checkState(this.freehead != null);
+		final AsyncControlBlock iocb = this.freehead;
+		if (this.freehead == this.freetail) {
+			this.freehead = this.freetail = null;
+		} else {
+			this.freehead = iocb.next;
+		}
+		iocb.next = null;
+		return iocb;
+
+	}
+
+	private void free(AsyncControlBlock iocb) {
+		if (this.freehead == null) {
+			this.freehead = iocb;
+			this.freetail = iocb;
+		} else {
+			this.freetail.next = iocb;
+			this.freetail = iocb;
+		}
 	}
 
 	/**
@@ -122,21 +167,70 @@ public class AsyncDiskContext implements AutoCloseable {
 	 * @param length
 	 */
 
-	public void read(BlockFileHandle fd, ByteBuf buf, long offset, long length) {
+	public void read(BlockFileHandle fd, ByteBuf buf, long offset, long length, Object attachment) {
+
+		// allocate a control block for this op
+		final AsyncControlBlock iocb = this.alloc();
 
 		// set up the control block.
-		final Pointer iocb = this.cbs[this.nextSlot++].pread(fd, new Pointer(buf.memoryAddress()), offset, length);
+		final Pointer ptr = iocb.pread(fd, buf.memoryAddress(), offset, length, attachment);
 
-		// submit the iocb
-		JLinux.io_submit(this.ctx, iocb);
+		// set the syscall pointer
+		this.inq.setPointer((this.inqpos++ * 8), ptr);
 
-		// return
+		// flush if we have no space left, even if not requested
+		if (this.inqpos == this.nr_events) {
+			this.flush();
+		}
 
 	}
 
-	public void events() {
+	public void flush() {
+		if (this.inqpos > 0) {
+			final int nr = this.inqpos;
+			this.inqpos = 0;
+			JLinux.io_submit(this.ctx, this.inq, nr);
+		}
+	}
 
-		JLinux.io_getevents(this.ctx, 0, 6);
+	/**
+	 * Performs a poll of the queue, retrieving any available io results.
+	 */
+
+	public int events(AsyncResult[] results) {
+
+		final int nrevents = JLinux.io_getevents(this.ctx, 1, results.length, this.mem);
+
+		// __u64 data; /* the data field from the iocb */
+		// __u64 obj; /* what iocb this event came from */
+		// __s64 res; /* result code for this event */
+		// __s64 res2; /* secondary result */
+
+		Pointer ptr = this.mem;
+
+		for (int i = 0; i < nrevents; ++i) {
+
+			final long slot = ptr.getLong(0);
+
+			final AsyncControlBlock iocb = this.iocbs[(int) slot];
+
+			results[i].result = ptr.getLong(16);
+			results[i].result2 = ptr.getLong(24);
+			results[i].attachment = iocb.clear();
+
+			this.results[i] = iocb.clear();
+
+			this.free(iocb);
+
+			ptr = ptr.share(32);
+
+		}
+
+		if (nrevents < this.nr_events) {
+			this.results[nrevents] = null;
+		}
+
+		return nrevents;
 
 	}
 

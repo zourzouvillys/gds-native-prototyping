@@ -6,6 +6,7 @@ import com.google.common.base.Preconditions;
 import com.sun.jna.Pointer;
 
 import io.ewok.linux.JLinux;
+import lombok.Getter;
 
 /**
  * An async io control block java interface.
@@ -21,17 +22,28 @@ public class AsyncControlBlock {
 
 	private final Pointer ipcbp;
 
-	public AsyncControlBlock(Pointer ptr) {
+	@Getter
+	private final int slot;
+
+	private Object data;
+
+	volatile AsyncControlBlock next = null;
+
+	public AsyncControlBlock(int slot, Pointer ptr) {
+		this.slot = slot;
 		this.ipcbp = Objects.requireNonNull(ptr);
 		this.ipcbp.clear(SIZE);
 	}
 
-	public Pointer pread(BlockFileHandle fd, Pointer target, long offset, long nbytes) {
+	public Pointer pread(BlockFileHandle fd, long memoryAddress, long offset, long nbytes, Object data) {
 
 		Preconditions.checkArgument(fd.fd >= 0);
 
+		// the data associated
+		this.data = data;
+
 		// __u64 aio_data; /* data to be returned in event's data */
-		this.ipcbp.setLong(0, 0);
+		this.ipcbp.setLong(0, this.slot);
 
 		/* the kernel sets aio_key to the req # */
 		this.ipcbp.setInt(8, 0);
@@ -50,7 +62,7 @@ public class AsyncControlBlock {
 		this.ipcbp.setInt(20, fd.fd);
 
 		// __u64 aio_buf;
-		this.ipcbp.setPointer(24, target);
+		this.ipcbp.setLong(24, memoryAddress);
 
 		// __u64 aio_nbytes;
 		this.ipcbp.setLong(32, nbytes);
@@ -77,6 +89,12 @@ public class AsyncControlBlock {
 
 		return this.ipcbp;
 
+	}
+
+	public Object clear() {
+		final Object res = this.data;
+		this.data = null;
+		return res;
 	}
 
 }

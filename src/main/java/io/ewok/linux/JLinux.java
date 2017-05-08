@@ -133,7 +133,7 @@ public final class JLinux {
 		Objects.requireNonNull(path, "path");
 		final long fd = NativeLinux.libc.syscall(SYSCALL64.open, path.toString(), flags, mode);
 		if (fd == -1) {
-			throw LinuxErrorException.capture("open");
+			throw LinuxErrorException.capture("open", path.toString(), flags, mode);
 		}
 		return (int) fd;
 	}
@@ -635,14 +635,20 @@ public final class JLinux {
 	static Memory ipcbp[] = new Memory[2];
 
 	public static final void io_submit(long ctx, Pointer... iocbs) {
-
 		final long res = NativeLinux.libc.syscall(SYSCALL64.io_submit, ctx, 1L, new PointerByReference(iocbs[0]));
-
 		if (res != 1) {
 			throw LinuxErrorException.capture("io_submit");
 		}
-
 	}
+
+	public static final void io_submit(long ctx, Pointer iocbs, int num) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.io_submit, ctx, num, iocbs);
+		if (res != num) {
+			throw LinuxErrorException.capture("io_submit", ctx, iocbs, num);
+		}
+	}
+
+
 
 	/**
 	 *
@@ -723,41 +729,22 @@ public final class JLinux {
 	 *
 	 * @param ioctx
 	 * @param min_nr
-	 * @param max_nr
+	 * @param mem
 	 * @return
 	 */
 
-	public static final int io_getevents(long ioctx, long min_nr, long max_nr) {
+	public static final int io_getevents(long ioctx, long min_nr, long max_nr, Memory evp) {
 
-		final Memory eventsp = new Memory(32 * max_nr);
+		assert max_nr <= evp.size() / 32;
 
-		final long res = NativeLinux.libc.syscall(SYSCALL64.io_getevents, ioctx, min_nr, max_nr, eventsp, null);
+		final long res = NativeLinux.libc.syscall(SYSCALL64.io_getevents, ioctx, min_nr, max_nr, evp, null);
 
 		if (res < 0) {
 			throw LinuxErrorException.capture("io_getevents");
 		}
 
-		// __u64 data; /* the data field from the iocb */
-		// __u64 obj; /* what iocb this event came from */
-		// __s64 res; /* result code for this event */
-		// __s64 res2; /* secondary result */
-
-		Pointer ptr = eventsp;
-
-		for (int i = 0; i < res; ++i) {
-
-			System.err.println("DATA: " + ptr.getLong(0));
-			System.err.println("IOCBP: " + ptr.getLong(8));
-			System.err.println("RES: " + ptr.getLong(16));
-			System.err.println("RES2: " + ptr.getLong(24));
-
-			ptr = ptr.share(32);
-
-		}
-
 		return (int) res;
 
-		// throw new RuntimeException();
 	}
 
 	/**

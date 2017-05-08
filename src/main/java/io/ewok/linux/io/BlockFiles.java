@@ -6,6 +6,7 @@ import java.util.Objects;
 import com.google.common.base.Preconditions;
 
 import io.ewok.linux.JLinux;
+import io.ewok.linux.Stat;
 
 /**
  * Wrapper around linux filesystem operation.
@@ -140,7 +141,9 @@ public final class BlockFiles {
 	 */
 
 	public static BlockFileHandle openExisting(Path file) {
-		final int fd = JLinux.open(file, JLinux.O_DIRECT | JLinux.O_DSYNC | JLinux.O_RDWR, 0);
+		// final int fd = JLinux.open(file, JLinux.O_DIRECT | JLinux.O_DSYNC |
+		// JLinux.O_RDWR, 0);
+		final int fd = JLinux.open(file, JLinux.O_DIRECT | JLinux.O_RDONLY, 0);
 		return new BlockFileHandle(fd);
 	}
 
@@ -150,6 +153,10 @@ public final class BlockFiles {
 
 	public static void unlink(Path file) {
 		JLinux.unlink(file);
+	}
+
+	public static Stat stat(Path file) {
+		return JLinux.stat(file);
 	}
 
 }

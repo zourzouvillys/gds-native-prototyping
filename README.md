@@ -248,6 +248,9 @@ The WAL is a great source of information about modified pages, so can be used to
 
 
 
+# Testing / Benchmarking
+
+gcloud compute --project "xxxxxxx" instances create "benchmark-1" --zone "us-central1-f" --machine-type "n1-highcpu-16" --subnet "default" --maintenance-policy "MIGRATE" --service-account "xxxxxx-compute@developer.gserviceaccount.com" --scopes "https://www.googleapis.com/auth/devstorage.read_only","https://www.googleapis.com/auth/logging.write","https://www.googleapis.com/auth/monitoring.write","https://www.googleapis.com/auth/servicecontrol","https://www.googleapis.com/auth/service.management.readonly","https://www.googleapis.com/auth/trace.append" --local-ssd interface="NVME" --local-ssd interface="NVME" --local-ssd interface="NVME" --local-ssd interface="NVME" --local-ssd interface="NVME" --local-ssd interface="NVME" --local-ssd interface="NVME" --local-ssd interface="NVME" --image "ubuntu-1704-zesty-v20170413" --image-project "ubuntu-os-cloud" --boot-disk-size "10" --boot-disk-type "pd-standard" --boot-disk-device-name "benchmark-1"
 
 
 
