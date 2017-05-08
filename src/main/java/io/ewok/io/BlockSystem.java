@@ -2,7 +2,7 @@ package io.ewok.io;
 
 import java.nio.file.Path;
 
-import io.ewok.linux.Stat;
+import io.ewok.linux.LinuxStat;
 import io.ewok.linux.io.LinuxBlockFileHandle;
 
 /**
@@ -110,6 +110,6 @@ public interface BlockSystem {
 	 * @return
 	 */
 
-	public Stat stat(Path file);
+	public LinuxStat stat(Path file);
 
 }

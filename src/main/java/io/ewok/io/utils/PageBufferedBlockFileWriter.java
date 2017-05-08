@@ -37,6 +37,7 @@ public class PageBufferedBlockFileWriter {
 	private LinkedPage tail = null;
 	private final long pageSize;
 	private final BlockAccessService io;
+	private boolean initialized = false;
 
 	/**
 	 * Open for writing.
@@ -90,6 +91,10 @@ public class PageBufferedBlockFileWriter {
 					this::synced,
 					page);
 
+		} else {
+
+			this.initialized = true;
+
 		}
 
 	}
@@ -115,6 +120,10 @@ public class PageBufferedBlockFileWriter {
 
 		}
 
+		this.initialized = true;
+
+		// can we flush any pages yet?
+
 	}
 
 	/**
@@ -122,9 +131,13 @@ public class PageBufferedBlockFileWriter {
 	 */
 
 	public void flush() {
-		System.err.println(this.head);
-		this.io.write(this.file, this.head.page, (this.head.pageno * this.file.pageSize()), this.file.pageSize(),
-				System.err::println);
+		if (this.head != null) {
+			this.io.write(
+					this.file,
+					this.head.page,
+					(this.head.pageno * this.file.pageSize()),
+					this.file.pageSize());
+		}
 	}
 
 	/*
@@ -147,7 +160,13 @@ public class PageBufferedBlockFileWriter {
 	 */
 
 	public MemoryWriter openWriter() {
-		this.head = this.appendPage();
+
+		if (this.head == null && this.tail == null) {
+			// we don't yet have out initial page, so need to start writting to
+			// a new page
+			this.appendPage();
+		}
+
 		return null;
 	}
 

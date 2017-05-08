@@ -61,8 +61,6 @@ public class AlignedByteBufPool implements PageBufferPool {
 			this.pool = buffy.slice(newPosition, capacity);
 		}
 
-		System.err.println(this.pool);
-
 	}
 
 	/**

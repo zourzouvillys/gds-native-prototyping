@@ -6,6 +6,7 @@ import com.google.common.base.Preconditions;
 
 import io.ewok.io.ReadWriteBlockFileHandle;
 import io.ewok.linux.JLinux;
+import io.ewok.linux.LinuxStat;
 
 /**
  * An opened file handle which is backed by a disk file.
@@ -45,12 +46,27 @@ public final class LinuxBlockFileHandle implements ReadWriteBlockFileHandle {
 	}
 
 	/**
+	 *
+	 */
+
+	@Override
+	public LinuxBlockFileHandle truncate(long length) {
+		JLinux.ftruncate(this.fd, length);
+		return this;
+	}
+
+	/**
 	 * Link this file descriptor to a path on the filesystem.
 	 */
 
+	@Override
 	public void linkat(Path file) {
 		JLinux.linkat(this.fd, null, JLinux.AT_FDCWD, file, JLinux.AT_EMPTY_PATH);
 	}
+
+	/**
+	 *
+	 */
 
 	@Override
 	public void close() {
@@ -59,14 +75,39 @@ public final class LinuxBlockFileHandle implements ReadWriteBlockFileHandle {
 		this.fd = -1;
 	}
 
+	/**
+	 *
+	 */
+
 	@Override
 	public LinuxBlockFileHandle flush() {
 		return this;
 	}
 
+	/**
+	 *
+	 */
+
 	@Override
 	public long pageSize() {
-		return 4096L;
+		return this.stat().getBlockSize();
+	}
+
+	/**
+	 *
+	 */
+
+	@Override
+	public long size() {
+		return this.stat().getSize();
+	}
+
+	/**
+	 * return the stat struct. may block!
+	 */
+
+	public LinuxStat stat() {
+		return JLinux.fstat(this.fd);
 	}
 
 }

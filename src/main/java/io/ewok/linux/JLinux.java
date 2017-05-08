@@ -47,7 +47,6 @@ public final class JLinux {
 
 	// user (file owner) has read, write, and execute permission
 	public static final int S_IRWXU = 00700;
-
 	// user has read permission
 	public static final int S_IRUSR = 00400;
 	// user has write permission
@@ -280,19 +279,36 @@ public final class JLinux {
 	 */
 
 	@SneakyThrows
-	public static Stat stat(Path file) {
+	public static LinuxStat stat(Path file) {
 
 		final Memory ptr = new Memory(144);
 
 		ptr.clear();
 
-		final long fd = NativeLinux.libc.syscall(SYSCALL64.stat, file.toString(), ptr);
+		final long res = NativeLinux.libc.syscall(SYSCALL64.stat, file.toString(), ptr);
 
-		if (fd == -1) {
+		if (res == -1) {
 			throw LinuxErrorException.capture("stat");
 		}
 
-		return new Stat(ptr);
+		return new LinuxStat(ptr);
+
+	}
+
+	@SneakyThrows
+	public static LinuxStat fstat(int fd) {
+
+		final Memory ptr = new Memory(144);
+
+		ptr.clear();
+
+		final long res = NativeLinux.libc.syscall(SYSCALL64.fstat, fd, ptr);
+
+		if (res == -1) {
+			throw LinuxErrorException.capture("fstat");
+		}
+
+		return new LinuxStat(ptr);
 
 	}
 
@@ -612,6 +628,19 @@ public final class JLinux {
 			throw LinuxErrorException.capture("fallocate");
 		}
 		return (int) res;
+	}
+
+	/**
+	 *
+	 * @param fd
+	 * @param length
+	 */
+
+	public static void ftruncate(int fd, long length) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.ftruncate, fd, length);
+		if (res == -1) {
+			throw LinuxErrorException.capture("ftruncate");
+		}
 	}
 
 	/*

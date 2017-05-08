@@ -7,7 +7,7 @@ import com.google.common.base.Preconditions;
 
 import io.ewok.io.BlockSystem;
 import io.ewok.linux.JLinux;
-import io.ewok.linux.Stat;
+import io.ewok.linux.LinuxStat;
 
 /**
  * Wrapper around linux filesystem operation.
@@ -155,7 +155,7 @@ public final class LinuxBlockFiles implements BlockSystem {
 	}
 
 	@Override
-	public Stat stat(Path file) {
+	public LinuxStat stat(Path file) {
 		return JLinux.stat(file);
 	}
 

@@ -11,9 +11,11 @@ import io.ewok.io.EwokPlatform;
 import io.ewok.io.PageBufferPool;
 import io.ewok.io.PageBufferUtils;
 import io.ewok.io.ReadWriteBlockFileHandle;
+import io.ewok.linux.LinuxStat;
 import io.ewok.linux.io.AlignedByteBufPool;
 import io.ewok.linux.io.AsyncBlockResult;
 import io.ewok.linux.io.AsyncDiskContext;
+import io.ewok.linux.io.LinuxBlockFileHandle;
 
 public class PageBufferedBlockFileWriterTest {
 
@@ -37,7 +39,7 @@ public class PageBufferedBlockFileWriterTest {
 			this.sync(io);
 
 			// now create the writer.
-			final PageBufferedBlockFileWriter writer = new PageBufferedBlockFileWriter(pool, file, io, 16);
+			final PageBufferedBlockFileWriter writer = new PageBufferedBlockFileWriter(pool, file, io, file.size());
 
 			// initialise the writer with any data on the page.
 			writer.init();
@@ -53,8 +55,18 @@ public class PageBufferedBlockFileWriterTest {
 
 			System.err.println(io);
 
+			file.truncate(0);
+
+			//
+			final LinuxStat stat = ((LinuxBlockFileHandle) file).stat();
+
+
+			System.err.println(stat.getFileType());
+
 		} finally {
+
 			EwokPlatform.fs().unlink(path);
+
 		}
 
 	}
