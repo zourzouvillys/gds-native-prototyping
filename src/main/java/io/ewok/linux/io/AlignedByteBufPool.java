@@ -1,20 +1,28 @@
 package io.ewok.linux.io;
 
+import com.google.common.base.Preconditions;
+
+import io.ewok.io.PageBuffer;
+import io.ewok.io.PageBufferAllocator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import lombok.Getter;
 
 /**
- * A pool of {@link ByteBuf} instances which are always aligned.
+ * A pool of {@link ByteBuf} instances which are always aligned to a specific
+ * boundary.
  *
- * The buffers are returned to the pool after being released.
+ * Fetch buffers using {@link #allocate(int)}, and release them once done.
  *
  * @author theo
  *
  */
 
-public class AlignedByteBufPool {
+public class AlignedByteBufPool implements PageBufferAllocator {
 
 	private final int pageSize;
+
+	@Getter
 	private final int numpages;
 	private final ByteBuf pool;
 	private int slot;
@@ -24,6 +32,10 @@ public class AlignedByteBufPool {
 	}
 
 	public AlignedByteBufPool(int pageSize, int numpages, int align) {
+
+		Preconditions.checkArgument(pageSize > 0, pageSize);
+		Preconditions.checkArgument(numpages > 0, numpages);
+		Preconditions.checkArgument(align > 0, align);
 
 		if (Long.bitCount(align) != 1) {
 			throw new IllegalArgumentException("Alignment must be a power of 2");
@@ -51,11 +63,25 @@ public class AlignedByteBufPool {
 
 	}
 
+	/**
+	 * Allocate a buffer.
+	 *
+	 * @param numPages
+	 * @return
+	 */
+
 	public ByteBuf allocate(int numPages) {
 		final int alloc = (numPages * this.pageSize);
 		final ByteBuf res = this.pool.slice((this.pageSize * this.slot), alloc);
 		this.slot += numPages;
 		return res;
+	}
+
+	@Override
+	public PageBuffer allocate() {
+		final ByteBuf res = this.pool.slice((this.pageSize * this.slot), this.pageSize);
+		this.slot += 1;
+		return new ByteBufPageBuffer(res);
 	}
 
 	public void reset() {

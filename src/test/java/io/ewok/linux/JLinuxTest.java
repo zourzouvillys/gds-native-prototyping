@@ -1,11 +1,8 @@
 package io.ewok.linux;
 
-import java.io.File;
 import java.io.IOException;
 
 import org.junit.Test;
-
-import net.smacke.jaydio.channel.DirectIoByteChannel;
 
 public class JLinuxTest {
 
@@ -20,10 +17,6 @@ public class JLinuxTest {
 
 		System.err.println("EPOLL FD: " + eventfd);
 
-		final DirectIoByteChannel channel = DirectIoByteChannel.getChannel(new File("/tmp/gds"), false);
-
-		System.err.println("GDS FD: " + channel.getFD());
-
 		// channel.allocate(0, 0, 8192 * 32);
 		final long ioctx = JLinux.io_setup(512);
 
@@ -33,20 +26,16 @@ public class JLinuxTest {
 
 		JLinux.epoll_ctl_add(epollfd, eventfd, JLinux.EPOLLIN | JLinux.EPOLLET, eventfd);
 
-		JLinux.io_submit(ioctx, eventfd, new IOCB(channel.getFD()));
-
 		final int events = JLinux.epoll_wait(epollfd, 1, -1);
 
 		System.err.println("EVENTS: " + events);
 
-		System.err.println(JLinux.io_getevents(ioctx, 1, 1));
 		JLinux.io_destroy(ioctx);
 
 		JLinux.close(epollfd);
 
 		JLinux.close(eventfd);
 
-		channel.close();
 
 	}
 

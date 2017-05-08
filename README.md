@@ -1,14 +1,12 @@
-x# EWOK GDS Buffers
+# EWOK GDS Storage API
 
-Low level object, buffer & page management.
+Low level block device access, object, buffer & page management.
 
 The library consists of a low level page access service which performs transfers to from storage (e.g, disk), and a buffer manager which performs page caching, eviction, transactions, and a write ahead log service.
 
-Higher level primitives such as streams, queues, indexes, and tables are built on top of this API.
-
 # Work Contexts
 
-A primary goal of GDS is to never block, and avoid locking wherever possible.
+A primary goal of GDS is to never block, and avoid locking wherever possible - to let the consumer threads decide how to spend time waiting on IO.
 
 To this end, any API calls which may require disk or network activity to occur before they can complete use completion futures or callbacks rather than blocking.
 

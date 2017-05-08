@@ -4,11 +4,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.ThreadLocalRandom;
 
+import io.ewok.io.BlockFileHandle;
+import io.ewok.io.BlockFileMode;
+import io.ewok.io.EwokPlatform;
 import io.ewok.linux.io.AlignedByteBufPool;
 import io.ewok.linux.io.AsyncDiskContext;
 import io.ewok.linux.io.AsyncResult;
-import io.ewok.linux.io.BlockFileHandle;
-import io.ewok.linux.io.BlockFiles;
 import io.netty.buffer.ByteBuf;
 
 public class Main {
@@ -64,14 +65,14 @@ public class Main {
 
 	public static void dispatch(boolean warmup, int count) {
 
-		final long nbytes = BlockFiles.stat(file).getSize();
+		final long nbytes = EwokPlatform.fs().stat(file).getSize();
 
 		final long pages = (int) (nbytes / pageSize);
 
 		System.err.println("File Size  : " + nbytes);
 		System.err.println("Num. Pages : " + pages);
 
-		try (final BlockFileHandle fd = BlockFiles.openExisting(file)) {
+		try (final BlockFileHandle fd = EwokPlatform.fs().openExisting(file, BlockFileMode.ReadWrite)) {
 
 			final AlignedByteBufPool pool = new AlignedByteBufPool(pageSize, ioq);
 
@@ -89,7 +90,7 @@ public class Main {
 
 				for (int i = 0; i < ioq; ++i) {
 					final ByteBuf buf = pool.allocate(1);
-					io.read(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
+					io.write(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
 					num++;
 				}
 
@@ -117,7 +118,11 @@ public class Main {
 								System.err.println(remaining);
 							}
 							num++;
-							io.read(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
+							if (num % 2 == 0) {
+								io.write(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
+							} else {
+								io.write(fd, buf, (random.nextLong(0, pages - 1) * pageSize), readSize, buf);
+							}
 						}
 
 					}
@@ -132,8 +137,7 @@ public class Main {
 
 			Main.secs = (System.currentTimeMillis() - start) / 1000.0;
 
-		}
-		catch (final Exception ex) {
+		} catch (final Exception ex) {
 			ex.printStackTrace();
 		}
 

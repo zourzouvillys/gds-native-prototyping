@@ -4,6 +4,8 @@ import com.google.common.base.Preconditions;
 import com.sun.jna.Memory;
 import com.sun.jna.Pointer;
 
+import io.ewok.io.BlockAccessService;
+import io.ewok.io.BlockFileHandle;
 import io.ewok.linux.JLinux;
 import io.ewok.linux.ProcFS;
 import io.netty.buffer.ByteBuf;
@@ -15,7 +17,7 @@ import io.netty.buffer.ByteBuf;
  *
  */
 
-public class AsyncDiskContext implements AutoCloseable {
+public class AsyncDiskContext implements BlockAccessService {
 
 	/**
 	 * The default size of the queue.
@@ -167,7 +169,10 @@ public class AsyncDiskContext implements AutoCloseable {
 	 * @param length
 	 */
 
-	public void read(BlockFileHandle fd, ByteBuf buf, long offset, long length, Object attachment) {
+	@Override
+	public <T> void read(BlockFileHandle bfh, ByteBuf buf, long offset, long length, T attachment) {
+
+		final LinuxBlockFileHandle fd = (LinuxBlockFileHandle)bfh;
 
 		// allocate a control block for this op
 		final AsyncControlBlock iocb = this.alloc();
@@ -185,6 +190,29 @@ public class AsyncDiskContext implements AutoCloseable {
 
 	}
 
+
+	@Override
+	public <T> void write(BlockFileHandle bfh, ByteBuf buf, long offset, long length, T attachment) {
+
+		final LinuxBlockFileHandle fd = (LinuxBlockFileHandle)bfh;
+
+		// allocate a control block for this op
+		final AsyncControlBlock iocb = this.alloc();
+
+		// set up the control block.
+		final Pointer ptr = iocb.pwrite(fd, buf.memoryAddress(), offset, length, attachment);
+
+		// set the syscall pointer
+		this.inq.setPointer((this.inqpos++ * 8), ptr);
+
+		// flush if we have no space left, even if not requested
+		if (this.inqpos == this.nr_events) {
+			this.flush();
+		}
+
+	}
+
+	@Override
 	public void flush() {
 		if (this.inqpos > 0) {
 			final int nr = this.inqpos;
@@ -197,6 +225,7 @@ public class AsyncDiskContext implements AutoCloseable {
 	 * Performs a poll of the queue, retrieving any available io results.
 	 */
 
+	@Override
 	public int events(AsyncResult[] results) {
 
 		final int nrevents = JLinux.io_getevents(this.ctx, 1, results.length, this.mem);

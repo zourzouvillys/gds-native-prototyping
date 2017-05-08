@@ -7,6 +7,9 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import org.junit.Test;
 
+import io.ewok.io.BlockFileHandle;
+import io.ewok.io.BlockFileMode;
+import io.ewok.io.EwokPlatform;
 import io.netty.buffer.ByteBuf;
 
 public class AsyncDiskContextTest {
@@ -19,7 +22,7 @@ public class AsyncDiskContextTest {
 		// try (BlockFileHandle tmp =
 		// BlockFiles.createTempFile(Paths.get("/tmp"), 8192)) {
 
-		try (final BlockFileHandle fd = BlockFiles.openExisting(file.resolve("moo"))) {
+		try (final BlockFileHandle fd = EwokPlatform.fs().openExisting(file.resolve("moo"), BlockFileMode.ReadWrite)) {
 
 			// BlockFiles.unlink(file.resolve("moo"));
 
@@ -51,7 +54,7 @@ public class AsyncDiskContextTest {
 
 				for (int i = 0; i < ioq; ++i) {
 					final ByteBuf buf = pool.allocate(1);
-					io.read(fd, buf, random.nextInt(0, pages - 1) * 4096, readSize, buf);
+					io.write(fd, buf, random.nextInt(0, pages - 1) * 4096, readSize, buf);
 					num++;
 				}
 
@@ -79,7 +82,7 @@ public class AsyncDiskContextTest {
 								System.err.println(remaining);
 							}
 							num++;
-							io.read(fd, (ByteBuf) (buf), random.nextInt(0, pages - 1) * 4096, readSize, buf);
+							io.write(fd, (ByteBuf) (buf), random.nextInt(0, pages - 1) * 4096, readSize, buf);
 						}
 
 					}

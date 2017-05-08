@@ -4,6 +4,7 @@ import java.nio.file.Path;
 
 import com.google.common.base.Preconditions;
 
+import io.ewok.io.BlockFileHandle;
 import io.ewok.linux.JLinux;
 import io.netty.buffer.ByteBuf;
 
@@ -14,7 +15,7 @@ import io.netty.buffer.ByteBuf;
  *
  */
 
-public final class BlockFileHandle implements AutoCloseable {
+public final class LinuxBlockFileHandle implements BlockFileHandle {
 
 	/**
 	 * the provided kernel FD.
@@ -26,7 +27,7 @@ public final class BlockFileHandle implements AutoCloseable {
 	 *
 	 */
 
-	BlockFileHandle(int fd) {
+	LinuxBlockFileHandle(int fd) {
 		Preconditions.checkArgument(fd >= 0);
 		this.fd = fd;
 	}
@@ -57,12 +58,16 @@ public final class BlockFileHandle implements AutoCloseable {
 		this.fd = -1;
 	}
 
-	public BlockFileHandle flush() {
+	public LinuxBlockFileHandle flush() {
 		return this;
 	}
 
-	public BlockFileHandle write(ByteBuf buf) {
+	public LinuxBlockFileHandle write(ByteBuf buf) {
 		return this;
+	}
+
+	public <T> void write(LinuxBlockFileHandle fd, ByteBuf buf, long offset, long length, T attachment) {
+
 	}
 
 }

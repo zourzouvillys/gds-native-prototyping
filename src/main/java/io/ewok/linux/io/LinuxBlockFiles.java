@@ -5,6 +5,8 @@ import java.util.Objects;
 
 import com.google.common.base.Preconditions;
 
+import io.ewok.io.BlockFileMode;
+import io.ewok.io.BlockSystem;
 import io.ewok.linux.JLinux;
 import io.ewok.linux.Stat;
 
@@ -17,7 +19,7 @@ import io.ewok.linux.Stat;
  *
  */
 
-public final class BlockFiles {
+public final class LinuxBlockFiles implements BlockSystem {
 
 	/**
 	 * safely create a new file and open it for using with async io, using
@@ -39,7 +41,8 @@ public final class BlockFiles {
 	 *
 	 */
 
-	public static BlockFileHandle createFile(Path file, long prealloc_bytes) {
+	@Override
+	public LinuxBlockFileHandle createFile(Path file, long prealloc_bytes) {
 
 		Objects.requireNonNull(file);
 		Objects.requireNonNull(file.getParent());
@@ -53,7 +56,7 @@ public final class BlockFiles {
 				JLinux.S_IWUSR | JLinux.S_IRUSR);
 		;
 
-		try (final BlockFileHandle handle = new BlockFileHandle(fd)) {
+		try (final LinuxBlockFileHandle handle = new LinuxBlockFileHandle(fd)) {
 
 			if (prealloc_bytes > 0) {
 				// preallocate the space, if requested.
@@ -64,23 +67,10 @@ public final class BlockFiles {
 			handle.linkat(file);
 
 			// now open the file at its new path using standard openExisting.
-			return openExisting(file);
+			return this.openExisting(file, BlockFileMode.ReadWrite);
 
 		}
 
-	}
-
-	/**
-	 * Create a new file without preallocting any space, failing if the file
-	 * already exists.
-	 *
-	 * @param file
-	 *            The new file to create.
-	 * @return
-	 */
-
-	public static BlockFileHandle createFile(Path file) {
-		return createFile(file, 0);
 	}
 
 	/**
@@ -89,7 +79,7 @@ public final class BlockFiles {
 	 *
 	 * The returned file handle will not have a filename, and will be deleted
 	 * when the process exits. Any attempt to use
-	 * {@link BlockFileHandle#linkat(Path)} will fail.
+	 * {@link LinuxBlockFileHandle#linkat(Path)} will fail.
 	 *
 	 * @param prealloc_bytes
 	 *            How many bytes should be pre allocated for this file, if any.
@@ -97,7 +87,8 @@ public final class BlockFiles {
 	 * @return
 	 */
 
-	public static BlockFileHandle createTempFile(Path dir, long prealloc_bytes) {
+	@Override
+	public LinuxBlockFileHandle createTempFile(Path dir, long prealloc_bytes) {
 
 		Preconditions.checkNotNull(dir, "dir");
 		Preconditions.checkArgument(prealloc_bytes >= 0, prealloc_bytes);
@@ -109,7 +100,7 @@ public final class BlockFiles {
 				JLinux.S_IWUSR | JLinux.S_IRUSR);
 		;
 
-		final BlockFileHandle handle = new BlockFileHandle(fd);
+		final LinuxBlockFileHandle handle = new LinuxBlockFileHandle(fd);
 
 		if (prealloc_bytes > 0) {
 			// preallocate the space, if requested.
@@ -118,14 +109,6 @@ public final class BlockFiles {
 
 		return handle;
 
-	}
-
-	/**
-	 * Create a temporary file without any preallocated space.
-	 */
-
-	public static BlockFileHandle createTempFile(Path dir) {
-		return createTempFile(dir, 0);
 	}
 
 	/**
@@ -140,22 +123,41 @@ public final class BlockFiles {
 	 *
 	 */
 
-	public static BlockFileHandle openExisting(Path file) {
-		// final int fd = JLinux.open(file, JLinux.O_DIRECT | JLinux.O_DSYNC |
-		// JLinux.O_RDWR, 0);
-		final int fd = JLinux.open(file, JLinux.O_DIRECT | JLinux.O_RDONLY, 0);
-		return new BlockFileHandle(fd);
+	@Override
+	public LinuxBlockFileHandle openExisting(Path file, BlockFileMode mode) {
+
+		int flags = JLinux.O_DIRECT | JLinux.O_DSYNC;
+
+		switch (mode) {
+			case ReadOnly:
+				flags |= JLinux.O_RDONLY;
+				break;
+			case ReadWrite:
+				flags |= JLinux.O_RDWR;
+				break;
+			case WriteOnly:
+				flags |= JLinux.O_WRONLY;
+				break;
+			default:
+				break;
+
+		}
+
+		final int fd = JLinux.open(file, flags, 0);
+		return new LinuxBlockFileHandle(fd);
 	}
 
 	/**
 	 * Unlink this file from the filesystem.
 	 */
 
-	public static void unlink(Path file) {
+	@Override
+	public void unlink(Path file) {
 		JLinux.unlink(file);
 	}
 
-	public static Stat stat(Path file) {
+	@Override
+	public Stat stat(Path file) {
 		return JLinux.stat(file);
 	}
 
