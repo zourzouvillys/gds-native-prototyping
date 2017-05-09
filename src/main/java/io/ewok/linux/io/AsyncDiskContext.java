@@ -350,9 +350,9 @@ public class AsyncDiskContext implements BlockAccessService {
 	@Override
 	public String toString() {
 		final StringBuilder sb = new StringBuilder();
-		sb.append("aio(");
+		sb.append("ioctx[ ");
 		sb.append(this.stats);
-		sb.append(")");
+		sb.append(" ]");
 		return sb.toString();
 	}
 

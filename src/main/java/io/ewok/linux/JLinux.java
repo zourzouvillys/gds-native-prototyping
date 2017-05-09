@@ -6,10 +6,12 @@ import java.util.Objects;
 
 import com.sun.jna.Memory;
 import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.LongByReference;
 import com.sun.jna.ptr.PointerByReference;
 
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Native linux API syscalls.
@@ -18,6 +20,7 @@ import lombok.SneakyThrows;
  *
  */
 
+@Slf4j
 public final class JLinux {
 
 	/**
@@ -511,6 +514,43 @@ public final class JLinux {
 		return res;
 	}
 
+	/*
+	 *
+	 */
+
+	public static final int MPOL_F_STATIC_NODES = 0;
+	public static final int MPOL_F_RELATIVE_NODES = 0;
+
+	public static final int MPOL_F_MEMS_ALLOWED = 0;
+	public static final int MPOL_F_ADDR = 0;
+	public static final int MPOL_F_NODE = 0;
+
+	public static final int MPOL_DEFAULT = 0;
+	public static final int MPOL_BIND = 0;
+	public static final int MPOL_INTERLEAVE = 0;
+	public static final int MPOL_PREFERRED = 0;
+	public static final int MPOL_LOCAL = 0;
+
+	public static final int MPOL_MF_STRICT = 0;
+	public static final int MPOL_MF_MOVE = 0;
+	public static final int MPOL_MF_MOVE_ALL = 0;
+
+	/**
+	 *
+	 * @param addr
+	 * @param length
+	 * @param flags
+	 * @return
+	 */
+
+	public static long mbind(long addr, long len, int mode, long nodemask, long maxnode, int flags) {
+		final long res = NativeLinux.libc.syscall(SYSCALL64.mbind, addr, len, mode, nodemask, maxnode, flags);
+		if (res != 0) {
+			throw LinuxErrorException.capture("mbind", addr, len, mode, nodemask, maxnode, flags);
+		}
+		return res;
+	}
+
 	/**
 	 *
 	 * @param addr
@@ -526,9 +566,64 @@ public final class JLinux {
 		return res;
 	}
 
+	/*
+	 *
+	 */
+
 	/**
 	 *
 	 */
+
+	public static void get_mempolicy(long maxnode, long addr, long flags) {
+		final IntByReference modep = new IntByReference(0);
+		final LongByReference nodemaskp = new LongByReference(0);
+		if (NativeLinux.libc.syscall(SYSCALL64.get_mempolicy, modep, nodemaskp, maxnode, addr, flags) < 0) {
+			throw LinuxErrorException.capture("get_mempolicy", modep, nodemaskp, maxnode, addr, flags);
+		}
+	}
+
+	/**
+	 *
+	 */
+
+	public static void set_mempolicy(int mode, long nodemask, long maxnode) {
+		final LongByReference nodemaskp = new LongByReference(nodemask);
+		if (NativeLinux.libc.syscall(SYSCALL64.set_mempolicy, mode, nodemaskp, maxnode) < 0) {
+			throw LinuxErrorException.capture("set_mempolicy", mode, nodemaskp, maxnode);
+		}
+	}
+
+	/**
+	 *
+	 */
+
+	public static void migrate_pages() {
+		NativeLinux.libc.syscall(SYSCALL64.migrate_pages);
+	}
+
+	public static void move_pages() {
+		NativeLinux.libc.syscall(SYSCALL64.move_pages);
+	}
+
+	/*
+	 *
+	 */
+
+	public void ioprio_get() {
+		NativeLinux.libc.syscall(SYSCALL64.ioprio_get);
+	}
+
+	public void ioprio_set() {
+		NativeLinux.libc.syscall(SYSCALL64.ioprio_set);
+	}
+
+	public void getpriority() {
+		NativeLinux.libc.syscall(SYSCALL64.getpriority);
+	}
+
+	public void setpriority() {
+		NativeLinux.libc.syscall(SYSCALL64.setpriority);
+	}
 
 	/**
 	 * uname.
@@ -1072,6 +1167,108 @@ public final class JLinux {
 
 	public static void sched_setattr(long pid, SchedAttr attrs, int flags) {
 		NativeLinux.libc.syscall(SYSCALL64.sched_setattr, pid, attrs, flags);
+	}
+
+	public void sched_getaffinity() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_getaffinity);
+	}
+
+	public void sched_setaffinity() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_setaffinity);
+	}
+
+	public void sched_getscheduler() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_getscheduler);
+	}
+
+	public void sched_setscheduler() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_setscheduler);
+	}
+
+	public void sched_get_priority_max() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_get_priority_max);
+	}
+
+	public void sched_get_priority_min() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_get_priority_min);
+	}
+
+	public void sched_getparam() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_getparam);
+	}
+
+	public void sched_setparam() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_setparam);
+	}
+
+	public void sched_rr_get_interval() {
+		NativeLinux.libc.syscall(SYSCALL64.sched_rr_get_interval);
+	}
+
+	/**
+	 *
+	 */
+
+	public static final int PERF_TYPE_HARDWARE = 0;
+
+	public static final int PERF_COUNT_HW_INSTRUCTIONS = 1;
+
+	/*
+	 *perf_event_open(0x7f6f2c358bc0, 0, -1, -1, 0) = -1 ENOENT (No such file or directory)
+	 */
+
+	@SneakyThrows
+	public static int perf_event_open(int pid, int cpu, int group_fd, long flags) {
+
+		final Memory hw_event = new Memory(112);
+
+		hw_event.clear();
+
+		// type
+		hw_event.setInt(0, 1 << 0);
+
+		// size
+		hw_event.setInt(4, (int) hw_event.size());
+
+		// config
+		hw_event.setInt(8, PERF_COUNT_HW_INSTRUCTIONS);
+
+		// flags
+		hw_event.setLong(40, 0);
+
+		// period/freq
+		hw_event.setLong(48, 10000);
+
+		// sample_type
+		hw_event.setLong(56, 1 << 16);
+
+		// read_format
+		hw_event.setLong(64, 1 << 2);
+
+		// pe.disabled = 1;
+		// pe.exclude_kernel = 1;
+		// pe.exclude_hv = 1;
+		//
+		// fd = perf_event_open(&pe, 0, -1, -1, 0);
+		// if (fd == -1) {
+		// fprintf(stderr, "Error opening leader %llx\n", pe.config);
+		// exit(EXIT_FAILURE);
+		// }
+		//
+		// ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+		// ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+
+		flags = 1 << 0;
+
+		final long fd = NativeLinux.libc.syscall(SYSCALL64.perf_event_open, hw_event, pid, cpu, group_fd, flags);
+
+		if (fd == -1) {
+			throw LinuxErrorException.capture("perf_event_open");
+
+		}
+
+		return (int) fd;
+
 	}
 
 }

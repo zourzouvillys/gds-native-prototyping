@@ -11,11 +11,10 @@ import io.ewok.io.EwokPlatform;
 import io.ewok.io.PageBufferPool;
 import io.ewok.io.PageBufferUtils;
 import io.ewok.io.ReadWriteBlockFileHandle;
-import io.ewok.linux.LinuxStat;
+import io.ewok.jvm.XThreadInfo;
 import io.ewok.linux.io.AlignedByteBufPool;
 import io.ewok.linux.io.AsyncBlockResult;
 import io.ewok.linux.io.AsyncDiskContext;
-import io.ewok.linux.io.LinuxBlockFileHandle;
 
 public class PageBufferedBlockFileWriterTest {
 
@@ -57,11 +56,7 @@ public class PageBufferedBlockFileWriterTest {
 
 			file.truncate(0);
 
-			//
-			final LinuxStat stat = ((LinuxBlockFileHandle) file).stat();
-
-
-			System.err.println(stat.getFileType());
+			XThreadInfo.main(null);
 
 		} finally {
 
