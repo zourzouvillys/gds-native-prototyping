@@ -11,6 +11,7 @@ import javax.management.openmbean.CompositeData;
 import com.sun.management.GarbageCollectionNotificationInfo;
 
 public class GCMointor {
+
 	public static void installGCMonitoring() {
 
 		// get all the GarbageCollectorMXBeans - there's one for each heap

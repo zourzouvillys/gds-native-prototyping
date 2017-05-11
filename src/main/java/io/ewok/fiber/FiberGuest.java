@@ -28,4 +28,11 @@ public interface FiberGuest {
 
 	void signal(Fiber fiber) throws Exception;
 
+	/**
+	 * called when this guest is serviced because a caller dispatched to us but
+	 * we were not scheduled.
+	 */
+
+	void rapidenter(Fiber self, Fiber caller) throws Exception;
+
 }

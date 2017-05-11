@@ -1,7 +1,11 @@
 
+
  buildscript {
+
+  ext.kotlin_version = '1.1.2-3'
  
   repositories {
+    mavenCentral()
     maven {
       url "https://plugins.gradle.org/m2/"
     }
@@ -11,19 +15,24 @@
     classpath 'net.ltgt.gradle:gradle-errorprone-plugin:0.0.8'
     classpath 'com.google.gradle:osdetector-gradle-plugin:1.4.0'
     classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.1' 
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
   }
   
 }
 
+
 repositories {
+    mavenCentral()
     jcenter()
 }
 
 apply plugin: 'java'
+apply plugin: "kotlin"
 apply plugin: 'application'
 apply plugin: 'net.ltgt.errorprone'
 apply plugin: 'com.google.osdetector'
 apply plugin: 'com.google.protobuf'
+
 
 group = 'io.ewok.gds'
 version = '0.0.1-SNAPSHOT'
@@ -45,6 +54,14 @@ dependencies {
 	compile 'com.google.protobuf:protobuf-java-util:3.3.0'
 	
 	compile 'net.java.dev.jna:jna:4.4.0'
+
+	compile "org.jetbrains.kotlin:kotlin-stdlib-jre8"
+	compile group: 'org.jetbrains.kotlinx', name: 'kotlinx-coroutines-core', version: '0.15'
+	
+	compile 'fr.inria.gforge.spoon:spoon-core:5.6.0'
+	compile 'org.openjdk.jol:jol-core:0.8'
+	compile 'org.ow2.asm:asm-all:5.2'
+	
 	
 	testCompile 'ch.qos.logback:logback-classic:1.2.2'
 	
@@ -60,7 +77,10 @@ tasks.withType(JavaCompile) {
   options.compilerArgs += [ '-Xlint:unchecked', '-Xep:DeadException:WARN', '-Xep:GuardedByValidator:OFF' ]
 }
 
-
+sourceSets {
+    main.kotlin.srcDirs += 'src/main/kotlin'
+    main.java.srcDirs += 'src/main/java'
+}
 
 protobuf {
   generatedFilesBaseDir = "$projectDir/src"
@@ -74,4 +94,10 @@ sourceSets {
     proto {
     }
   }
+}
+
+kotlin {
+    experimental {
+        coroutines 'enable'
+    }
 }

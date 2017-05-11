@@ -1,12 +1,16 @@
 package io.ewok.fiber;
 
+import java.util.ArrayList;
+
 import com.google.common.base.Preconditions;
 
-import io.ewok.jvm.GCMointor;
+import lombok.SneakyThrows;
 
 /**
  * The scheduler creates, schedules, and destroys {@link Fiber} instances and
  * the {@link FiberThread} instances they run in.
+ *
+ *
  *
  * NUMA: be aware of running on NUMA nodes: Just like with CPU pinning of
  * threads to minimize pipeline stalls, avoid migrating work between NUMA nodes,
@@ -19,8 +23,10 @@ import io.ewok.jvm.GCMointor;
 
 public class Scheduler {
 
+	private final ArrayList<FiberThread> threads = new ArrayList<>();
+
+
 	public Scheduler() {
-		GCMointor.installGCMonitoring();
 	}
 
 	/**
@@ -61,11 +67,35 @@ public class Scheduler {
 	}
 
 	public void startThread() {
-		new FiberThread(this).start();
+		final FiberThread thread = new FiberThread(this);
+		this.threads.add(thread);
+		thread.start();
 	}
 
+	/**
+	 * called by the {@link FiberThread} when it has finished processing, and is
+	 * about to exit.
+	 */
+
+	@SneakyThrows
 	public void removeThread(FiberThread t) {
-		System.err.println("Thread finished");
+		System.err.println("Thread " + t + " finished");
+		// we need to enqueue a Thread#join to reap it.
+	}
+
+	/**
+	 * called to shutdown the scheduler.
+	 */
+
+	public void shutdown() {
+		this.threads.forEach(thread -> thread.shutdown());
+		this.threads.forEach(thread -> {
+			try {
+				thread.join();
+			} catch (final Exception ex) {
+				ex.printStackTrace();
+			}
+		});
 	}
 
 }

@@ -16,6 +16,9 @@ class RuntimeFiberHost implements Fiber {
 
 	private long lastScheduledAt;
 
+	// when in the run queue, this is
+	private RuntimeFiberHost runq;
+
 	RuntimeFiberHost(Scheduler scheduler, FiberGuest guest) {
 		this.scheduler = scheduler;
 		this.guest = guest;

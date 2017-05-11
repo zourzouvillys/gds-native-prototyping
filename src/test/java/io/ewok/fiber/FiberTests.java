@@ -7,47 +7,39 @@ public class FiberTests {
 	@Test
 	public void test() {
 
-		final Scheduler scheduler = new Scheduler();
+		// GCMointor.installGCMonitoring();
 
-		scheduler.startThread();
+		for (int x = 0; x < 100; ++x) {
 
-		final Fiber fiber = scheduler.allocate(new FiberGuest() {
+			final Scheduler scheduler = new Scheduler();
 
-			@Override
-			public void start(Fiber fiber) throws InterruptedException {
-				System.err.println("START: " + fiber.now());
-				Thread.sleep(1500);
-				System.err.println("START DONE: " + fiber.now());
+			scheduler.startThread();
+
+			final Fiber fiber = scheduler.allocate(new TestGuest());
+
+			for (int i = 0; i < 1_0000; ++i) {
+				fiber.schedule();
 			}
 
-			@Override
-			public void signal(Fiber fiber) {
-				System.err.println("SIGNAL");
+			final long lastScheduledAt = System.nanoTime();
+
+			for (int i = 0; i < 1_000_000; ++i) {
+				fiber.schedule();
 			}
 
-			@Override
-			public void reenter(Fiber fiber) {
-			}
+			final double running = ((System.nanoTime() - lastScheduledAt) / 1000.0);
 
-		});
+			System.err.println(String.format("%,.04f us", running / 1_000_000));
 
-		for (int i = 0; i < 1_0000; ++i) {
-			fiber.schedule();
+			// fiber.schedule();
+
+			fiber.join();
+
+			scheduler.shutdown();
+
+			System.err.println("Shutdown");
+
 		}
-
-		final long lastScheduledAt = System.nanoTime();
-
-		for (int i = 0; i < 1_000_000; ++i) {
-			fiber.schedule();
-		}
-
-		final double running = ((System.nanoTime() - lastScheduledAt) / 1000.0);
-
-		System.err.println(String.format("%,.04f us", running / 1_000_000));
-
-		//fiber.schedule();
-
-		fiber.join();
 
 	}
 

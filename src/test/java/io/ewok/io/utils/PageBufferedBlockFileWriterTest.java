@@ -11,7 +11,6 @@ import io.ewok.io.EwokPlatform;
 import io.ewok.io.PageBufferPool;
 import io.ewok.io.PageBufferUtils;
 import io.ewok.io.ReadWriteBlockFileHandle;
-import io.ewok.jvm.XThreadInfo;
 import io.ewok.linux.io.AlignedByteBufPool;
 import io.ewok.linux.io.AsyncBlockResult;
 import io.ewok.linux.io.AsyncDiskContext;
@@ -19,6 +18,7 @@ import io.ewok.linux.io.AsyncDiskContext;
 public class PageBufferedBlockFileWriterTest {
 
 	@Test
+
 	public void test() throws InterruptedException {
 
 		final Path path = Paths.get("/tmp/wal");
@@ -56,7 +56,7 @@ public class PageBufferedBlockFileWriterTest {
 
 			file.truncate(0);
 
-			XThreadInfo.main(null);
+			// XThreadInfo.main(null);
 
 		} finally {
 

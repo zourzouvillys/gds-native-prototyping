@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 final class FiberThread extends Thread implements Thread.UncaughtExceptionHandler {
 
 	private final Scheduler scheduler;
+	private volatile boolean shutdown = false;
 
 	FiberThread(Scheduler scheduler) {
 		super(scheduler.threadGroup(), null, "FIBER-THREAD", 0);
@@ -28,14 +29,31 @@ final class FiberThread extends Thread implements Thread.UncaughtExceptionHandle
 	 *
 	 */
 
+	void shutdown() {
+		this.shutdown = true;
+	}
+
+	/**
+	 *
+	 */
+
 	@Override
 	public void run() {
 
 		try {
 
-			// wait for work.
+			System.err.println("THREAD Started");
+
+			while (!this.shutdown) {
+				// wait for work from the scheduler.
+				Thread.sleep(250);
+			}
+
+			System.err.println("DONE");
 
 		} catch (final Exception ex) {
+
+			ex.printStackTrace();
 
 		}
 
