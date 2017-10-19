@@ -1,4 +1,4 @@
-# EWOK GDS Storage API
+
 
 **note** this is a bunch of prototype code and ideas, mostly for historical purposes. nothing in here should be used in production!
 
